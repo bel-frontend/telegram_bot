@@ -21,14 +21,16 @@ bot.on("message", (msg) => {
       bot
         .deleteMessage(chatId, msg.message_id)
         .then(() => {
-          //           const randomMessage = json[Math.floor(Math.random() * json.length)];
-          //           sendMessage(
-          //             TARGET_CHAT_ID,
-          //             `Тут было паведамленне якое не суадносіцца з нашай суполкай. Мы яго выдалілі і замест  гэтага  трымайце беларускую  прыказку ці прымаўку:
+          const randomMessage = json[Math.floor(Math.random() * json.length)];
+          sendMessage(
+            TARGET_CHAT_ID,
+            `Тут было паведамленне якое не суадносіцца з нашай суполкай. Мы яго выдалілі і замест  гэтага  трымайце беларускую  прыказку ці прымаўку:
 
-          // "${randomMessage.message}"
-          //              `
-          //           );
+          "${randomMessage.message}"
+                       `
+          ).catch((error) => {
+            console.error("Failed to send message:", error);
+          });
           sendMessage(
             TARGET_NOTIFICATION_ID,
             `Message deleted: ${text} from author: ${msg.from.username}`
