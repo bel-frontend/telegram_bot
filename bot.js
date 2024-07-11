@@ -4,6 +4,7 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
 
 const TARGET_CHAT_ID = process.env.TARGET_CHAT_ID; // Add your target chat ID in the .env file
+const TARGET_NOTIFICATION_ID = process.env.TARGET_NOTIFICATION_ID; // Add your target chat ID in the .env file
 
 bot.on("message", (msg) => {
   const chatId = msg.chat.id;
@@ -14,12 +15,24 @@ bot.on("message", (msg) => {
     // Analyze messages and decide to delete
     if (text && shouldDeleteMessage(text)) {
       console.log("delete");
-      bot.deleteMessage(chatId, msg.message_id).catch((error) => {
-        console.error("Failed to delete message:", error);
-      });
+      bot
+        .deleteMessage(chatId, msg.message_id)
+        .then(() => {
+          sendMessage(
+            TARGET_NOTIFICATION_ID,
+            `Message deleted: ${text} from author: ${msg.from.username}`
+          );
+        })
+        .catch((error) => {
+          console.error("Failed to delete message:", error);
+        });
     }
   }
 });
+
+const sendMessage = (chatId, text) => {
+  bot.sendMessage(chatId, text);
+};
 
 function shouldDeleteMessage(text) {
   // Simple example of a condition to delete a message
