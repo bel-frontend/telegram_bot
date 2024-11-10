@@ -4,33 +4,39 @@ const json = require("./index.json");
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
 
-const TARGET_CHAT_ID = process.env.TARGET_CHAT_ID; // Add your target chat ID in the .env file
-const TARGET_NOTIFICATION_ID = process.env.TARGET_NOTIFICATION_ID; // Add your target chat ID in the .env file
-//  get random message from 1  to 770
-const randomMessage = json[Math.floor(Math.random() * json.length)];
+const TARGET_CHAT_IDS = process.env.TARGET_CHAT_IDS.split(","); // Add your target chat IDs in the .env file, separated by commas
+const TARGET_NOTIFICATION_ID = process.env.TARGET_NOTIFICATION_ID; // Add your target notification ID in the .env file
+
+bot.on("polling_error", (error) => {
+  console.log(error);
+  console.error("Polling error:", error.code, error?.response?.body);
+});
 
 bot.on("message", (msg) => {
   const chatId = msg.chat.id;
-  const text = msg.text;
-  console.log(text, TARGET_CHAT_ID, chatId.toString());
 
-  if (chatId.toString() === TARGET_CHAT_ID) {
+  if (TARGET_CHAT_IDS.includes(chatId.toString())) {
+    const text = msg.text;
+    const caption = msg.caption;
+
     // Analyze messages and decide to delete
-    if (text && shouldDeleteMessage(text)) {
-      console.log("delete");
+    if (shouldDeleteMessage([text || "", caption || ""])) {
       bot
         .deleteMessage(chatId, msg.message_id)
         .then(() => {
           const randomMessage = json[Math.floor(Math.random() * json.length)];
 
           try {
-            sendMessage(TARGET_NOTIFICATION_ID, `Message deleted: ${text} `);
+            sendMessage(
+              TARGET_NOTIFICATION_ID,
+              `Message deleted: ${text || caption} `
+            );
           } catch (error) {
             console.error("Failed to send message:", error);
           }
 
           sendMessage(
-            TARGET_CHAT_ID,
+            chatId,
             `Тут было паведамленне якое не суадносіцца з нашай суполкай. Мы яго выдалілі і замест гэтага  трымайце беларускую прыказку ці прымаўку:
 
           "${randomMessage.message}"
@@ -50,7 +56,7 @@ const sendMessage = (chatId, text) => {
   bot.sendMessage(chatId, text);
 };
 
-function shouldDeleteMessage(text) {
+function shouldDeleteMessage(messagesArray) {
   // Simple example of a condition to delete a message
   // You can implement any analysis logic here
   const forbiddenWords = [
@@ -60,7 +66,9 @@ function shouldDeleteMessage(text) {
     "подписывайтесь на канал",
     "и", // disabled russian text
   ];
-  return forbiddenWords.some((word) =>
-    text.trim().toLowerCase().includes(word)
-  );
+  return forbiddenWords.some((word) => {
+    return messagesArray.find((text) =>
+      text.trim().toLowerCase().includes(word)
+    );
+  });
 }
