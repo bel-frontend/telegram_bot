@@ -60,7 +60,6 @@ function shouldDeleteMessage(messagesArray) {
   // Simple example of a condition to delete a message
   // You can implement any analysis logic here
   const forbiddenWords = [
-    "test",
     "крипто",
     "криптовалюта",
     "подписывайтесь на канал",
