@@ -1,6 +1,6 @@
 const TelegramBot = require("node-telegram-bot-api");
 const json = require("./index.json");
-const fetch = require("node-fetch");
+const nodeFetch = require("node-fetch"); // Explicitly import node-fetch
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
@@ -94,7 +94,7 @@ function shouldDeleteMessage(messagesArray) {
 async function checkSitesStatus() {
   for (const site of SITES_TO_CHECK) {
     try {
-      const response = await fetch(site);
+      const response = await nodeFetch(site); // Use nodeFetch explicitly
       if (!response.ok) {
         // If the response status is not OK (e.g., 404, 500), send a notification
         sendMessage(
