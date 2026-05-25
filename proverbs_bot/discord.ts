@@ -42,7 +42,7 @@ const orchestrator = new ChatOrchestratorAgent(
 const conversations = new Map<string, ChatMessage[]>();
 const debugConversations = new Set<string>();
 const MAX_CONVERSATION_MESSAGES = 12;
-const HELP_MESSAGE = `Прывітанне! Я  прыказкавы бот, які шукае прыказкі, прымаўкі, народныя мудрасці, праклёны, гразьбы, дыялектныя словы і выразы ў калекцыі.
+const HELP_MESSAGE = `Прывітанне! Я  прыказкавы бот, які шукае прыказкі, прымаўкі, народныя мудрасці, праклёны, грозьбы, дыялектныя словы і выразы ў калекцыі (папаўняецца).
 Можна пісаць звычайным тэкстам: шукаць прыказкі, прымаўкі, народныя мудрасці, праклёны, гразьбы, дыялектныя словы і выразы.
 
 Каманды:
