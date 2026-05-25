@@ -1,6 +1,5 @@
 const TelegramBot = require("node-telegram-bot-api");
 const json = require("./index.json");
-const nodeFetch = require("node-fetch"); // Explicitly import node-fetch
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
@@ -8,7 +7,11 @@ const bot = new TelegramBot(token, { polling: true });
 const TARGET_CHAT_IDS = process.env.TARGET_CHAT_IDS.split(","); // Add your target chat IDs in the .env file, separated by commas
 const TARGET_NOTIFICATION_ID = process.env.TARGET_NOTIFICATION_ID; // Add your target notification ID in the .env file
 
-const SITES_TO_CHECK = ["https://bel-geek.com"]; // Add your site URLs here
+const SITES_TO_CHECK = [
+"https://bel-geek.com",
+// "https://spa-consolidation-reports-v3-demo-stage.dev.quext.io",
+ "https://test.goman.live"];
+ // Add your site URLs here
 
 const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
 
@@ -94,7 +97,7 @@ function shouldDeleteMessage(messagesArray) {
 async function checkSitesStatus() {
   for (const site of SITES_TO_CHECK) {
     try {
-      const response = await nodeFetch(site); // Use nodeFetch explicitly
+      const response = await fetch(site);
       if (!response.ok) {
         // If the response status is not OK (e.g., 404, 500), send a notification
         sendMessage(
