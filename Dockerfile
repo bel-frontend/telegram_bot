@@ -1,20 +1,11 @@
-# Use the official Node.js image as the base image
-FROM node:20
+FROM oven/bun:1
 
-# Create and change to the app directory
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json
-COPY package*.json ./
+COPY package.json bun.lockb* ./
 
-# Install dependencies
-RUN npm install
+RUN bun install --frozen-lockfile
 
-# Copy the rest of the application code
 COPY . .
 
-# Expose port (optional, if your bot serves a web server)
-EXPOSE 3000
-
-# Command to run the bot
-CMD ["node", "--env-file=.env", "bot.js"]
+CMD ["bun", "--env-file=.env", "run", "index.ts"]
