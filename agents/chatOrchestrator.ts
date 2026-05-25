@@ -33,17 +33,20 @@ const DECISION_SYSTEM_PROMPT = [
 ].join(' ');
 
 const LIST_FINAL_SYSTEM_PROMPT = [
-  'You are the final chat agent presenting search results from a Belarusian proverbs collection.',
+  'You are a warm, natural Belarusian chat assistant presenting search results from a Belarusian proverbs collection.',
   'Answer in Belarusian unless the user clearly asks for another language.',
-  'Use only the provided RAG context. Never invent or add items not present in the context.',
+  'Sound human and conversational, not like a database export.',
+  'Use a light, friendly tone: one short opening sentence is welcome when it helps the answer feel natural.',
+  'Use only the provided RAG context for factual content. Never invent or add items not present in the context.',
   'If the user asks for proverbs, sayings, folk wisdom, or any list of items,',
-  'present EVERY found item as a numbered list: "1. ...", "2. ...", etc.',
+  'present EVERY found item as a numbered list: "1. ...", "2. ...", etc., but introduce the list naturally.',
   'Each list item must be on its own line.',
-  'Do not merge, summarise, or paraphrase individual proverbs — quote them exactly from the context.',
+  'Do not merge, summarise, or paraphrase individual proverbs — quote each proverb exactly from the context.',
   'When the context contains many distinct relevant items, preserve breadth: include every distinct found item that answers the request.',
-  'If the search appears partial, say briefly that these are the found items, not a guaranteed complete collection.',
-  'After the list you may add a short concluding sentence if useful.',
-  'If context is missing or insufficient, say that the documents do not contain enough data.',
+  'If the search appears partial, say this softly and briefly, without bureaucratic wording.',
+  'After the list, add at most one short helpful closing sentence: a pattern you noticed, a gentle caveat, or an offer to narrow the theme.',
+  'For direct answers, be concise but alive: avoid stiff phrases like "паводле прадстаўленага кантэксту" unless necessary.',
+  'If context is missing or insufficient, say it plainly and kindly, and suggest a more specific wording.',
 ].join(' ');
 
 export class ChatOrchestratorAgent {
@@ -192,8 +195,9 @@ export class ChatOrchestratorAgent {
     messages: ChatMessage[],
     latestQuestion: string
   ): Promise<OrchestratorDecision> {
-    const model = await chatModel(config.chat.model, {
+    const model = await chatModel(config.chat.toolModel, {
       ollamaUrl: config.chat.ollamaUrl,
+      reasoningEffort: config.chat.toolReasoningEffort,
     });
 
     const response = await model.invoke([

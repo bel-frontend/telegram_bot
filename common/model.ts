@@ -5,6 +5,7 @@ import { ChatOpenAI } from '@langchain/openai';
 interface ChatModelOptions {
     apiKey?: string;
     ollamaUrl?: string;
+    reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 export enum Model {
@@ -66,6 +67,7 @@ export async function chatModel(
 ): Promise<ChatOpenAI | ChatOllama | ChatGoogleGenerativeAI> {
     let chatModelInstance: ChatOpenAI | ChatOllama | ChatGoogleGenerativeAI;
     const openAIKey = options?.apiKey || process.env.OPENAI_API_KEY;
+    const reasoningEffort = options?.reasoningEffort;
 
     switch (model) {
         case Model.GPT4o:
@@ -75,49 +77,49 @@ export async function chatModel(
             chatModelInstance = openAIModel(Model.GPT5_5, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT5:
             chatModelInstance = openAIModel(Model.GPT5, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'minimal' },
+                reasoning: { effort: reasoningEffort || 'minimal' },
             });
             break;
         case Model.GPT5_MINI:
             chatModelInstance = openAIModel(Model.GPT5_MINI, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT5_NANO:
             chatModelInstance = openAIModel(Model.GPT5_NANO, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT5_4:
             chatModelInstance = openAIModel(Model.GPT5_4, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT5_4_MINI:
             chatModelInstance = openAIModel(Model.GPT5_4_MINI, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT5_4_NANO:
             chatModelInstance = openAIModel(Model.GPT5_4_NANO, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT4_1:
@@ -132,33 +134,33 @@ export async function chatModel(
         case Model.O3_MINI:
             chatModelInstance = openAIModel(Model.O3_MINI, openAIKey, {
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.O3:
             chatModelInstance = openAIModel(Model.O3, openAIKey, {
                 useResponsesApi: true,
-                reasoning: { effort: 'medium' },
+                reasoning: { effort: reasoningEffort || 'medium' },
             });
             break;
         case Model.O4_MINI:
             chatModelInstance = openAIModel(Model.O4_MINI, openAIKey, {
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT5_1:
             chatModelInstance = openAIModel(Model.GPT5_1, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT5_2:
             chatModelInstance = openAIModel(Model.GPT5_2, openAIKey, {
                 temperature: 1,
                 useResponsesApi: true,
-                reasoning: { effort: 'low' },
+                reasoning: { effort: reasoningEffort || 'low' },
             });
             break;
         case Model.GPT4o_MINI:

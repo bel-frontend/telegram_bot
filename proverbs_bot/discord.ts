@@ -12,7 +12,6 @@ import { LexicalRetriever } from '../rag/lexicalRetriever';
 import { HybridRetriever } from '../rag/hybridRetriever';
 import { FolkWisdomSearchTool } from '../agents/folkWisdomSearchTool';
 import { ChatOrchestratorAgent } from '../agents/chatOrchestrator';
-import { config } from '../config';
 import type { ChatMessage } from '../agents/schemas';
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -22,7 +21,7 @@ if (!DISCORD_TOKEN) {
 }
 
 // Initialise the RAG stack once at startup
-const qdrant = createQdrantClient(config);
+const qdrant = createQdrantClient();
 const embeddings = createEmbeddings();
 const vectorRetriever = new QdrantRetriever(qdrant, embeddings);
 const lexicalRetriever = new LexicalRetriever(qdrant);
@@ -57,8 +56,8 @@ client.on('messageCreate', async (message: Message) => {
   if (!question) return;
 
   // Show typing indicator and refresh it every 8s while waiting
-  await message.channel.sendTyping();
-  const typingInterval = setInterval(() => message.channel.sendTyping(), 8000);
+  await sendTyping(message.channel);
+  const typingInterval = setInterval(() => void sendTyping(message.channel), 8000);
 
   try {
     const messages: ChatMessage[] = [{ role: 'user', content: question }];
@@ -74,3 +73,9 @@ client.on('messageCreate', async (message: Message) => {
 });
 
 client.login(DISCORD_TOKEN);
+
+async function sendTyping(channel: Message['channel']): Promise<void> {
+  if ('sendTyping' in channel && typeof channel.sendTyping === 'function') {
+    await channel.sendTyping();
+  }
+}

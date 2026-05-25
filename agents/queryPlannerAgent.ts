@@ -30,8 +30,9 @@ const PLANNER_SYSTEM_PROMPT = [
 
 export class QueryPlannerAgent {
   async plan(messages: ChatMessage[], latestQuestion: string, fallbackTool: ToolName): Promise<SearchPlan> {
-    const model = await chatModel(config.chat.model, {
+    const model = await chatModel(config.chat.toolModel, {
       ollamaUrl: config.chat.ollamaUrl,
+      reasoningEffort: config.chat.toolReasoningEffort,
     });
 
     const response = await model.invoke([

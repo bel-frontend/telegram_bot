@@ -52,8 +52,9 @@ export class LlmReranker {
 
     const startedAt = Date.now();
 
-    const model = await chatModel(config.chat.model, {
+    const model = await chatModel(config.chat.toolModel, {
       ollamaUrl: config.chat.ollamaUrl,
+      reasoningEffort: config.chat.toolReasoningEffort,
     });
 
     const candidates = input.sources.map((source, index) => ({

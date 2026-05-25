@@ -35,8 +35,9 @@ export class RagResultEvaluator {
       };
     }
 
-    const model = await chatModel(config.chat.model, {
+    const model = await chatModel(config.chat.toolModel, {
       ollamaUrl: config.chat.ollamaUrl,
+      reasoningEffort: config.chat.toolReasoningEffort,
     });
 
     const trimmedSources = options.sources.map((source, index) => ({

@@ -8,6 +8,15 @@ function numberFromEnv(name: string, defaultValue: number): number {
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
+function reasoningEffortFromEnv(name: string, defaultValue: 'minimal' | 'low' | 'medium' | 'high') {
+  const val = process.env[name];
+  if (val === 'minimal' || val === 'low' || val === 'medium' || val === 'high') {
+    return val;
+  }
+
+  return defaultValue;
+}
+
 export const config = {
   qdrant: {
     url: (process.env.QDRANT_URL || '').replace(/\/$/, ''),
@@ -20,6 +29,8 @@ export const config = {
   },
   chat: {
     model: process.env.CHAT_MODEL || 'gpt-5.4',
+    toolModel: process.env.CHAT_TOOL_MODEL || process.env.CHAT_MODEL || 'gpt-5.4-mini',
+    toolReasoningEffort: reasoningEffortFromEnv('CHAT_TOOL_REASONING_EFFORT', 'minimal'),
     ollamaUrl: process.env.OLLAMA_BASE_URL,
   },
   server: {
