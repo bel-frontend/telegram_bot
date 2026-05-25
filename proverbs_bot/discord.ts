@@ -68,8 +68,6 @@ client.on("messageCreate", async (message: Message) => {
   const isDM = message.channel.type === ChannelType.DM;
   const isMentioned = client.user ? message.mentions.has(client.user) : false;
 
-  if (!isDM && !isMentioned) return;
-
   // Strip mention from message text
   const question = message.content.replace(/<@!?\d+>/g, "").trim();
   if (!question) return;
@@ -104,6 +102,8 @@ client.on("messageCreate", async (message: Message) => {
     await message.reply("Debug mode выключаны.");
     return;
   }
+
+  if (!isDM && !isMentioned) return;
 
   const previousMessages = conversations.get(conversationKey) || [];
   if (previousMessages.length === 0) {
