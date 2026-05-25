@@ -8,6 +8,12 @@ function numberFromEnv(name: string, defaultValue: number): number {
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
+function booleanFromEnv(name: string, defaultValue = false): boolean {
+  const val = process.env[name];
+  if (!val) return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(val.toLowerCase());
+}
+
 function reasoningEffortFromEnv(name: string, defaultValue: 'minimal' | 'low' | 'medium' | 'high') {
   const val = process.env[name];
   if (val === 'minimal' || val === 'low' || val === 'medium' || val === 'high') {
@@ -39,5 +45,8 @@ export const config = {
   search: {
     minScore: numberFromEnv('RAG_MIN_SCORE', 0.25),
     folkWisdomTopK: numberFromEnv('FOLK_WISDOM_TOP_K', 30),
+  },
+  debug: {
+    rag: booleanFromEnv('DISCORD_DEBUG_RAG') || booleanFromEnv('RAG_DEBUG'),
   },
 };

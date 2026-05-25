@@ -1,11 +1,13 @@
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { chatModel } from '../common/model';
 import { config } from '../config';
+import type { DialectDictionarySearchTool } from './dialectDictionarySearchTool';
 import type { FolkWisdomSearchTool } from './folkWisdomSearchTool';
 import { LlmReranker } from './llmReranker';
 import { QueryPlannerAgent, fallbackPlan } from './queryPlannerAgent';
 import { QuestionRewriterAgent } from './questionRewriterAgent';
 import { RagResultEvaluator } from './ragResultEvaluator';
+import type { RagSearchTool } from './ragSearchTool';
 import {
   FinalAnswerSchema,
   OrchestratorDecisionSchema,
@@ -25,15 +27,17 @@ import { parseStructuredOutput, schemaInstruction } from './json';
 const NARROW_MODE_TOP_K = 6;
 
 const DECISION_SYSTEM_PROMPT = [
-  'You are the orchestrator for a Belarusian proverbs bot.',
+  'You are the orchestrator for a Belarusian RAG bot.',
   'You receive a chat history and the latest user question.',
   'Use search_folk_wisdom for any question about proverbs, sayings, folk wisdom, aphorisms, народныя мудрасці, прыказкі, прымаўкі.',
+  'Use search_dialect_dictionary for Vushatski Slovazbor, Ryhor Baradulin, dialect words, local expressions, curses, threats, гразьбы, праклёны, праклены, праклёны, пракляцці.',
+  'Use search_rag for general document lookup that is not specifically folk wisdom or dialect dictionary.',
   'Use answer_directly ONLY for greetings or simple conversation that clearly does not need the proverbs collection.',
-  'When in doubt, always use search_folk_wisdom.',
+  'When in doubt, choose the search action that best matches the user wording.',
 ].join(' ');
 
 const LIST_FINAL_SYSTEM_PROMPT = [
-  'You are a warm, natural Belarusian chat assistant presenting search results from a Belarusian proverbs collection.',
+  'You are a warm, natural Belarusian chat assistant presenting search results from a Belarusian RAG collection.',
   'Answer in Belarusian unless the user clearly asks for another language.',
   'Sound human and conversational, not like a database export.',
   'Use a light, friendly tone: one short opening sentence is welcome when it helps the answer feel natural.',
@@ -55,6 +59,8 @@ export class ChatOrchestratorAgent {
 
   constructor(
     private readonly folkWisdomSearchTool: FolkWisdomSearchTool,
+    private readonly ragSearchTool: RagSearchTool,
+    private readonly dialectDictionarySearchTool: DialectDictionarySearchTool,
     private readonly queryPlannerAgent = new QueryPlannerAgent(),
     private readonly questionRewriterAgent = new QuestionRewriterAgent()
   ) {}
@@ -65,7 +71,9 @@ export class ChatOrchestratorAgent {
     const effectiveQuestion = standaloneQuestion || originalQuestion;
     const wasRewritten = standaloneQuestion !== originalQuestion;
 
-    const decision = requiresFolkWisdomTool(effectiveQuestion)
+    const decision = requiresDialectDictionaryTool(effectiveQuestion)
+      ? forcedSearchDecision('search_dialect_dictionary', effectiveQuestion)
+      : requiresFolkWisdomTool(effectiveQuestion)
       ? forcedFolkWisdomDecision(effectiveQuestion)
       : await this.decide(messages, effectiveQuestion);
 
@@ -84,15 +92,23 @@ export class ChatOrchestratorAgent {
     }
 
     const searchQuery = decision.searchQuery?.trim() || effectiveQuestion;
-    const usedTool: ToolName = 'folk_wisdom_search';
+    const requestedTool = toolForDecision(decision);
+    const lockTool = isForcedSearchDecision(decision);
 
-    const firstAttempt = await this.searchRerankEvaluate(messages, effectiveQuestion, searchQuery);
+    const firstAttempt = await this.searchRerankEvaluate(
+      messages,
+      effectiveQuestion,
+      searchQuery,
+      requestedTool,
+      lockTool
+    );
 
     const finalResult = !firstAttempt.evaluation.sufficientForAnswer
-      ? await this.retrySearch(messages, effectiveQuestion, searchQuery, firstAttempt)
+      ? await this.retrySearch(messages, effectiveQuestion, searchQuery, firstAttempt, lockTool)
       : firstAttempt;
 
-    const enforcedPlan = { ...finalResult.searchPlan, tool: usedTool };
+    const usedTool = finalResult.searchPlan.tool;
+    const enforcedPlan = finalResult.searchPlan;
     const bestOutput = finalResult.searchOutput;
     const bestEvaluation = finalResult.evaluation;
     const sourcesForAnswer = finalResult.rerankedSources;
@@ -147,12 +163,18 @@ export class ChatOrchestratorAgent {
   private async searchRerankEvaluate(
     messages: ChatMessage[],
     latestQuestion: string,
-    searchQuery: string
+    searchQuery: string,
+    fallbackTool: ToolName,
+    lockTool = false
   ): Promise<SearchRerankResult> {
-    const searchPlan = await this.queryPlannerAgent.plan(messages, searchQuery, 'folk_wisdom_search');
-    const enforcedPlan = { ...searchPlan, tool: 'folk_wisdom_search' as ToolName };
+    const searchPlan = await this.queryPlannerAgent.plan(messages, searchQuery, fallbackTool);
+    const enforcedPlan = lockTool
+      ? { ...searchPlan, tool: fallbackTool }
+      : searchPlan.tool === 'chat'
+      ? { ...searchPlan, tool: fallbackTool }
+      : searchPlan;
 
-    const searchOutput = await this.folkWisdomSearchTool.invokePlan(enforcedPlan);
+    const searchOutput = await this.invokeSearchTool(enforcedPlan);
 
     const topK = topKForPlan(enforcedPlan);
     const { rankedSources, trace: rerankTrace } = await this.reranker.rerank({
@@ -168,7 +190,7 @@ export class ChatOrchestratorAgent {
 
     return {
       searchOutput,
-      searchPlan,
+      searchPlan: enforcedPlan,
       rerankedSources: rankedSources,
       rerankTrace,
       evaluation,
@@ -179,16 +201,35 @@ export class ChatOrchestratorAgent {
     messages: ChatMessage[],
     latestQuestion: string,
     searchQuery: string,
-    previous: SearchRerankResult
+    previous: SearchRerankResult,
+    lockTool = false
   ): Promise<SearchRerankResult> {
     const retryHint = `${searchQuery} — папярэдні пошук: ${previous.evaluation.evaluationReason}`;
-    const result = await this.searchRerankEvaluate(messages, latestQuestion, retryHint);
+    const result = await this.searchRerankEvaluate(
+      messages,
+      latestQuestion,
+      retryHint,
+      previous.searchPlan.tool,
+      lockTool
+    );
 
     if (result.evaluation.qualityScore >= previous.evaluation.qualityScore) {
       return result;
     }
 
     return previous;
+  }
+
+  private async invokeSearchTool(plan: SearchPlan): Promise<RagSearchOutput> {
+    if (plan.tool === 'dialect_dictionary_search') {
+      return this.dialectDictionarySearchTool.invokePlan(plan);
+    }
+
+    if (plan.tool === 'rag_search') {
+      return this.ragSearchTool.invokePlan(plan);
+    }
+
+    return this.folkWisdomSearchTool.invokePlan(plan);
   }
 
   private async decide(
@@ -205,7 +246,7 @@ export class ChatOrchestratorAgent {
       new SystemMessage(
         schemaInstruction(
           'OrchestratorDecision',
-          '{"action":"answer_directly|search_folk_wisdom","searchQuery":"string optional","directAnswer":"string optional","reason":"string"}'
+          '{"action":"answer_directly|search_rag|search_folk_wisdom|search_dialect_dictionary","searchQuery":"string optional","directAnswer":"string optional","reason":"string"}'
         )
       ),
       new HumanMessage(
@@ -290,6 +331,10 @@ function latestUserMessage(messages: ChatMessage[]): string {
 }
 
 function fallbackDecision(latestQuestion: string): OrchestratorDecision {
+  if (requiresDialectDictionaryTool(latestQuestion)) {
+    return forcedSearchDecision('search_dialect_dictionary', latestQuestion);
+  }
+
   if (requiresFolkWisdomTool(latestQuestion)) {
     return forcedFolkWisdomDecision(latestQuestion);
   }
@@ -303,9 +348,9 @@ function fallbackDecision(latestQuestion: string): OrchestratorDecision {
   }
 
   return {
-    action: 'search_folk_wisdom',
+    action: 'search_rag',
     searchQuery: latestQuestion,
-    reason: 'Fallback: defaulting to folk wisdom search.',
+    reason: 'Fallback: defaulting to general RAG search.',
   };
 }
 
@@ -322,6 +367,35 @@ function requiresFolkWisdomTool(question: string): boolean {
     /\b(proverb|proverbs|saying|sayings|folk wisdom|aphorism|aphorisms)\b/i.test(question) ||
     /(прыказк|прымаўк|народн\w*\s+мудрасц|прыслоў|выслоў|афарызм)/i.test(question)
   );
+}
+
+function requiresDialectDictionaryTool(question: string): boolean {
+  return (
+    /\b(curse|curses|threat|threats|dialect|vushatski|slovazbor|baradulin)\b/i.test(question) ||
+    /(пракл[её]н|пракляц|праклін|гразьб|пагроз|дыялект|вушацк|словазбор|барадулін|мясцов\w*\s+выраз)/iu.test(question)
+  );
+}
+
+function forcedSearchDecision(
+  action: Exclude<OrchestratorDecision['action'], 'answer_directly'>,
+  latestQuestion: string
+): OrchestratorDecision {
+  return {
+    action,
+    searchQuery: latestQuestion,
+    reason: `Forced tool: ${action}.`,
+  };
+}
+
+function isForcedSearchDecision(decision: OrchestratorDecision): boolean {
+  return decision.reason.startsWith('Forced tool:');
+}
+
+function toolForDecision(decision: OrchestratorDecision): ToolName {
+  if (decision.action === 'search_dialect_dictionary') return 'dialect_dictionary_search';
+  if (decision.action === 'search_rag') return 'rag_search';
+  if (decision.action === 'search_folk_wisdom') return 'folk_wisdom_search';
+  return 'chat';
 }
 
 interface SearchRerankResult {
