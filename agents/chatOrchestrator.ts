@@ -53,6 +53,9 @@ const LIST_FINAL_SYSTEM_PROMPT = [
   'After the list, add at most one short helpful closing sentence: a pattern you noticed, a gentle caveat, or an offer to narrow the theme.',
   'For direct answers, be concise but alive: avoid stiff phrases like "паводле прадстаўленага кантэксту" unless necessary.',
   'If context is missing or insufficient, say it plainly and kindly, and suggest a more specific wording.',
+  'Before returning the final JSON, silently re-check your answer against the provided RAG sources.',
+  'Remove any claim or list item that is not supported by the sources, and for list requests verify that you did not skip distinct relevant items present in the provided sources.',
+  'If the sources contradict each other or look too weak, say that carefully instead of overstating confidence.',
 ].join(' ');
 
 export class ChatOrchestratorAgent {
@@ -275,6 +278,7 @@ export class ChatOrchestratorAgent {
   ): Promise<FinalAnswer> {
     const model = await chatModel(config.chat.model, {
       ollamaUrl: config.chat.ollamaUrl,
+      reasoningEffort: config.chat.reasoningEffort,
     });
 
     const response = await model.invoke([

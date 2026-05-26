@@ -34,7 +34,8 @@ export const config = {
     dimensions: numberFromEnv('EMBEDDINGS_DIM', 3072),
   },
   chat: {
-    model: process.env.CHAT_MODEL || 'gpt-5.4',
+    model: process.env.CHAT_MODEL || 'gpt-5.5',
+    reasoningEffort: reasoningEffortFromEnv('CHAT_REASONING_EFFORT', 'medium'),
     toolModel: process.env.CHAT_TOOL_MODEL || process.env.CHAT_MODEL || 'gpt-5.4-mini',
     toolReasoningEffort: reasoningEffortFromEnv('CHAT_TOOL_REASONING_EFFORT', 'minimal'),
     ollamaUrl: process.env.OLLAMA_BASE_URL,

@@ -3,6 +3,7 @@ import {
   GatewayIntentBits,
   Partials,
   ChannelType,
+  Status,
   type Message,
 } from "discord.js";
 import { createQdrantClient } from "../qdrant/index";
@@ -42,11 +43,19 @@ const orchestrator = new ChatOrchestratorAgent(
 const conversations = new Map<string, ChatMessage[]>();
 const debugConversations = new Set<string>();
 const MAX_CONVERSATION_MESSAGES = 12;
+const DISCORD_WATCHDOG_INTERVAL_MS = 60_000;
+const DISCORD_NOT_READY_RELOGIN_MS = 5 * 60_000;
+const DISCORD_PROACTIVE_RELOGIN_MS = minutesFromEnv("DISCORD_PROACTIVE_RELOGIN_MINUTES", 60) * 60_000;
 const HELP_MESSAGE = `Прывітанне! Я  прыказкавы бот, які шукае прыказкі, прымаўкі, народныя мудрасці, праклёны, грозьбы, дыялектныя словы і выразы ў калекцыі (папаўняецца).
 Можна пісаць звычайным тэкстам: шукаць прыказкі, прымаўкі, народныя мудрасці, праклёны, гразьбы, дыялектныя словы і выразы.
 
 Каманды:
 reset / рэзэт — пачаць размову нанова.`;
+
+function minutesFromEnv(name: string, defaultValue: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : defaultValue;
+}
 
 const client = new Client({
   intents: [
@@ -58,8 +67,42 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-client.once("clientReady", (readyClient) => {
+let lastDiscordReadyAt = Date.now();
+let lastDiscordLoginAt = Date.now();
+let lastDiscordReloginAt = 0;
+let discordReloginInFlight = false;
+
+client.on("clientReady", (readyClient) => {
+  lastDiscordReadyAt = Date.now();
+  lastDiscordLoginAt = Date.now();
   console.log(`Discord bot logged in as ${readyClient.user.tag}`);
+});
+
+client.on("error", (error) => {
+  console.error("Discord client error:", error);
+});
+
+client.on("warn", (warning) => {
+  console.warn("Discord client warning:", warning);
+});
+
+client.on("shardDisconnect", (event, shardId) => {
+  console.warn(
+    `Discord shard ${shardId} disconnected: code=${event.code}, reason=${event.reason || "none"}, clean=${event.wasClean}`,
+  );
+});
+
+client.on("shardReconnecting", (shardId) => {
+  console.warn(`Discord shard ${shardId} reconnecting.`);
+});
+
+client.on("shardResume", (shardId, replayedEvents) => {
+  console.log(`Discord shard ${shardId} resumed; replayed events: ${replayedEvents}.`);
+});
+
+client.on("invalidated", () => {
+  console.error("Discord session invalidated; forcing relogin.");
+  void reloginDiscord("session invalidated");
 });
 
 client.on("messageCreate", async (message: Message) => {
@@ -144,7 +187,8 @@ client.on("messageCreate", async (message: Message) => {
   }
 });
 
-client.login(DISCORD_TOKEN);
+void loginDiscord();
+startDiscordWatchdog();
 
 async function sendTyping(channel: Message["channel"]): Promise<void> {
   if ("sendTyping" in channel && typeof channel.sendTyping === "function") {
@@ -246,6 +290,65 @@ function collectionSize(value: unknown): number {
   }
 
   return 0;
+}
+
+async function loginDiscord(): Promise<void> {
+  try {
+    await client.login(DISCORD_TOKEN);
+  } catch (error) {
+    console.error("Discord login failed:", error);
+    setTimeout(() => void loginDiscord(), 30_000);
+  }
+}
+
+function startDiscordWatchdog(): void {
+  setInterval(() => {
+    const status = client.ws.status;
+    const ready = client.isReady();
+    const statusName = Status[status] || String(status);
+
+    if (ready) {
+      lastDiscordReadyAt = Date.now();
+      if (
+        DISCORD_PROACTIVE_RELOGIN_MS > 0 &&
+        Date.now() - lastDiscordLoginAt >= DISCORD_PROACTIVE_RELOGIN_MS
+      ) {
+        void reloginDiscord("scheduled proactive reconnect");
+      }
+      return;
+    }
+
+    const notReadyForMs = Date.now() - lastDiscordReadyAt;
+    console.warn(
+      `Discord watchdog: not ready, status=${statusName}, ping=${client.ws.ping}ms, notReadyForMs=${notReadyForMs}`,
+    );
+
+    if (notReadyForMs >= DISCORD_NOT_READY_RELOGIN_MS) {
+      void reloginDiscord(`watchdog status=${statusName}`);
+    }
+  }, DISCORD_WATCHDOG_INTERVAL_MS);
+}
+
+async function reloginDiscord(reason: string): Promise<void> {
+  if (discordReloginInFlight) return;
+  const now = Date.now();
+  if (now - lastDiscordReloginAt < DISCORD_NOT_READY_RELOGIN_MS) return;
+
+  discordReloginInFlight = true;
+  lastDiscordReloginAt = now;
+
+  try {
+    console.warn(`Discord relogin started: ${reason}`);
+    client.destroy();
+    await client.login(DISCORD_TOKEN);
+    lastDiscordReadyAt = Date.now();
+    lastDiscordLoginAt = Date.now();
+    console.warn("Discord relogin completed.");
+  } catch (error) {
+    console.error("Discord relogin failed:", error);
+  } finally {
+    discordReloginInFlight = false;
+  }
 }
 
 function trimConversation(messages: ChatMessage[]): ChatMessage[] {
