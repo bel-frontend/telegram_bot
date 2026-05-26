@@ -46,6 +46,7 @@ const MAX_CONVERSATION_MESSAGES = 12;
 const DISCORD_WATCHDOG_INTERVAL_MS = 60_000;
 const DISCORD_NOT_READY_RELOGIN_MS = 5 * 60_000;
 const DISCORD_PROACTIVE_RELOGIN_MS = minutesFromEnv("DISCORD_PROACTIVE_RELOGIN_MINUTES", 60) * 60_000;
+const DISCORD_GREETING_CHANNEL_ID = process.env.DISCORD_GREETING_CHANNEL_ID;
 const HELP_MESSAGE = `Прывітанне! Я  прыказкавы бот, які шукае прыказкі, прымаўкі, народныя мудрасці, праклёны, грозьбы, дыялектныя словы і выразы ў калекцыі (папаўняецца).
 Можна пісаць звычайным тэкстам: шукаць прыказкі, прымаўкі, народныя мудрасці, праклёны, гразьбы, дыялектныя словы і выразы.
 
@@ -71,11 +72,13 @@ let lastDiscordReadyAt = Date.now();
 let lastDiscordLoginAt = Date.now();
 let lastDiscordReloginAt = 0;
 let discordReloginInFlight = false;
+let startupGreetingSent = false;
 
 client.on("clientReady", (readyClient) => {
   lastDiscordReadyAt = Date.now();
   lastDiscordLoginAt = Date.now();
   console.log(`Discord bot logged in as ${readyClient.user.tag}`);
+  void sendStartupGreeting();
 });
 
 client.on("error", (error) => {
@@ -149,7 +152,7 @@ client.on("messageCreate", async (message: Message) => {
   if (!isDM && !isMentioned) return;
 
   const previousMessages = conversations.get(conversationKey) || [];
-  if (previousMessages.length === 0) {
+  if (isDM && previousMessages.length === 0) {
     await message.reply(HELP_MESSAGE);
   }
 
@@ -199,6 +202,20 @@ async function sendTyping(channel: Message["channel"]): Promise<void> {
 async function sendText(channel: Message["channel"], text: string): Promise<void> {
   if ("send" in channel && typeof channel.send === "function") {
     await channel.send(text);
+  }
+}
+
+async function sendStartupGreeting(): Promise<void> {
+  if (startupGreetingSent || !DISCORD_GREETING_CHANNEL_ID) return;
+
+  try {
+    const channel = await client.channels.fetch(DISCORD_GREETING_CHANNEL_ID);
+    if (channel && "send" in channel && typeof channel.send === "function") {
+      await channel.send(HELP_MESSAGE);
+      startupGreetingSent = true;
+    }
+  } catch (error) {
+    console.error("Discord startup greeting failed:", error);
   }
 }
 
