@@ -71,6 +71,7 @@ const client = new Client({
 let lastDiscordReadyAt = Date.now();
 let lastDiscordLoginAt = Date.now();
 let lastDiscordReloginAt = 0;
+let lastDiscordMessageAt = 0;
 let discordReloginInFlight = false;
 let startupGreetingSent = false;
 
@@ -99,6 +100,10 @@ client.on("shardReconnecting", (shardId) => {
   console.warn(`Discord shard ${shardId} reconnecting.`);
 });
 
+client.on("shardError", (error, shardId) => {
+  console.error(`Discord shard ${shardId} error:`, error);
+});
+
 client.on("shardResume", (shardId, replayedEvents) => {
   console.log(`Discord shard ${shardId} resumed; replayed events: ${replayedEvents}.`);
 });
@@ -111,12 +116,19 @@ client.on("invalidated", () => {
 client.on("messageCreate", async (message: Message) => {
   if (message.author.bot) return;
 
+  lastDiscordMessageAt = Date.now();
   const isDM = message.channel.type === ChannelType.DM;
   const isMentioned = client.user ? message.mentions.has(client.user) : false;
+  const isReplyToBot = await isReplyToCurrentBot(message);
 
   // Strip mention from message text
   const question = message.content.replace(/<@!?\d+>/g, "").trim();
-  if (!question) return;
+  if (!question) {
+    console.log(
+      `Discord ignored empty message: channel=${message.channel.id}, author=${message.author.id}, dm=${isDM}`,
+    );
+    return;
+  }
 
   const conversationKey = keyForConversation(message, isDM);
   if (isClearChatCommand(question)) {
@@ -149,7 +161,16 @@ client.on("messageCreate", async (message: Message) => {
     return;
   }
 
-  if (!isDM && !isMentioned) return;
+  if (!isDM && !isMentioned && !isReplyToBot) {
+    console.log(
+      `Discord ignored unmentioned guild message: channel=${message.channel.id}, author=${message.author.id}`,
+    );
+    return;
+  }
+
+  console.log(
+    `Discord handling message: channel=${message.channel.id}, author=${message.author.id}, dm=${isDM}, mention=${isMentioned}, replyToBot=${isReplyToBot}`,
+  );
 
   const previousMessages = conversations.get(conversationKey) || [];
   if (isDM && previousMessages.length === 0) {
@@ -222,6 +243,23 @@ async function sendStartupGreeting(): Promise<void> {
 function keyForConversation(message: Message, isDM: boolean): string {
   if (isDM) return `dm:${message.author.id}`;
   return `guild:${message.guildId || "unknown"}:${message.channel.id}:${message.author.id}`;
+}
+
+async function isReplyToCurrentBot(message: Message): Promise<boolean> {
+  const botId = client.user?.id;
+  const referenceMessageId = message.reference?.messageId;
+  if (!botId || !referenceMessageId) return false;
+
+  try {
+    const referenced = await message.fetchReference();
+    return referenced.author.id === botId;
+  } catch (error) {
+    console.warn(
+      `Discord could not fetch referenced message ${referenceMessageId}:`,
+      error,
+    );
+    return false;
+  }
 }
 
 function isResetCommand(text: string): boolean {
@@ -326,6 +364,11 @@ function startDiscordWatchdog(): void {
 
     if (ready) {
       lastDiscordReadyAt = Date.now();
+      const lastMessageAge =
+        lastDiscordMessageAt > 0 ? Date.now() - lastDiscordMessageAt : undefined;
+      console.log(
+        `Discord watchdog: ready, status=${statusName}, ping=${client.ws.ping}ms, lastMessageAgeMs=${lastMessageAge ?? "none"}`,
+      );
       if (
         DISCORD_PROACTIVE_RELOGIN_MS > 0 &&
         Date.now() - lastDiscordLoginAt >= DISCORD_PROACTIVE_RELOGIN_MS
