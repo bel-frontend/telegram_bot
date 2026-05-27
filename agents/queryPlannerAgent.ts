@@ -1,32 +1,18 @@
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { chatModel } from '../common/model';
 import { config } from '../config';
+import { parseStructuredOutput, schemaInstruction } from './json';
+import { PLANNER_SYSTEM_PROMPT } from './prompts';
 import {
   SearchPlanSchema,
   type ChatMessage,
   type SearchPlan,
   type ToolName,
 } from './schemas';
-import { parseStructuredOutput, schemaInstruction } from './json';
 
 type UnnormalizedSearchPlan = Omit<SearchPlan, 'resultMode'> & {
   resultMode?: SearchPlan['resultMode'];
 };
-
-const PLANNER_SYSTEM_PROMPT = [
-  'You are a query planning agent for a Belarusian RAG workshop.',
-  'Your job is to understand the user request before retrieval.',
-  'Extract the core idea, choose the best search tool, and generate expanded search queries.',
-  'Use dialect_dictionary_search for Vusacki Slovazbor, Ryhor Baradulin, dialect words, meanings, local expressions, curses, threats, гразьбы, праклёны, sections from the first book.',
-  'Use intent dialect_section_lookup when the user asks for a full section, list, all items, continuation, or a title-like query such as Устойлівыя выразы, Прыкметы, Стравы, Лекаванне.',
-  'Use folk_wisdom_search for proverbs, sayings, aphorisms, народныя мудрасці, прыказкі, прымаўкі across the collection.',
-  'Use rag_search for general document lookup.',
-  'Use chat only for greetings or conversation that does not need documents.',
-  'Expanded queries should include synonyms, likely section titles, spelling variants, and short exact phrases.',
-  'Choose resultMode answer for narrow factual questions, list for requested examples/items, section for full section lookups, and explore for broad semantic discovery.',
-  'Use semanticFacets for distinct meanings or topic angles that should each get retrieval coverage.',
-  'For list/explore requests set desiredResultCount high enough to preserve multiple results, usually 20-40.',
-].join(' ');
 
 export class QueryPlannerAgent {
   async plan(messages: ChatMessage[], latestQuestion: string, fallbackTool: ToolName): Promise<SearchPlan> {

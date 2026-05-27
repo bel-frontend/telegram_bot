@@ -2,22 +2,13 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { chatModel } from '../common/model';
 import { config } from '../config';
 import { parseStructuredOutput, schemaInstruction } from './json';
+import { EVALUATOR_SYSTEM_PROMPT } from './prompts';
 import type { RetrievedSource } from '../rag/types';
 import {
   EvaluationResultSchema,
   type EvaluationResult,
   type EvaluatedSource,
 } from './schemas';
-
-const EVALUATOR_SYSTEM_PROMPT = [
-  'You are a relevance evaluator for a Belarusian RAG pipeline.',
-  'Determine whether the retrieved sources are sufficient to answer the user question.',
-  'Assign overall qualityScore 0.0-1.0 and mark individual sources with relevanceScore 0.0-1.0.',
-  'Set sufficientForAnswer to true only if the top sources actually contain the needed information.',
-  'For list/explore requests (proverbs, signs, examples), set sufficientForAnswer true when enough topical variety is present.',
-  'Include all sources in relevantSources with their individual scores.',
-  'Respond in Belarusian.',
-].join(' ');
 
 const MAX_SOURCE_TEXT = 500;
 

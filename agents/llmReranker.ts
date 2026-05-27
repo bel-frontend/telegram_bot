@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { chatModel } from '../common/model';
 import { config } from '../config';
 import { parseStructuredOutput, schemaInstruction } from './json';
+import { RERANKER_SYSTEM_PROMPT } from './prompts';
 import type { RetrievedSource } from '../rag/types';
 import {
   RerankResultSchema,
@@ -9,17 +10,6 @@ import {
   type RerankedSource,
   type RerankTrace,
 } from './schemas';
-
-const RERANKER_SYSTEM_PROMPT = [
-  'You are a passage reranker for a Belarusian RAG pipeline.',
-  'You receive a user question and numbered candidate text chunks.',
-  'For each candidate, assign relevanceScore from 0.0 (off-topic) to 1.0 (directly satisfies the question).',
-  'Judge each candidate independently on whether it helps answer the question.',
-  'For list/explore requests (proverbs, signs, examples), reward topical match and variety; do not penalise a chunk just because it is one of many similar items.',
-  'For narrow factual requests, prefer chunks that contain the specific answer.',
-  'Always return a score for every candidate id in the input.',
-  'Optionally include a short reason in Belarusian.',
-].join(' ');
 
 const MAX_CANDIDATE_TEXT = 600;
 

@@ -56,7 +56,9 @@ export function collectSearchResults(options: {
   const sources = [...byKey.values()]
     .sort((left, right) => right.score - left.score)
     .slice(0, options.limit);
-  const sourceKeys = new Set(sources.map(sourceKey));
+
+  const deduplicated = deduplicateByText(sources);
+  const sourceKeys = new Set(deduplicated.map(sourceKey));
 
   const queryBreakdown = options.queryResults.map((result) => ({
     query: result.query,
@@ -66,7 +68,7 @@ export function collectSearchResults(options: {
       .filter((source) => sourceKeys.has(sourceKey(source))).length,
   }));
 
-  return { sources, queryBreakdown };
+  return { sources: deduplicated, queryBreakdown };
 }
 
 export function resultLimitForMode(options: {
@@ -108,4 +110,19 @@ function normalizeText(text: string): string {
     .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// Deduplicate sources whose normalised text fingerprint (first 150 chars) is
+// identical — this removes the same proverb that was indexed in multiple files
+// or on different pages. The highest-scored copy is kept.
+function deduplicateByText<T extends RetrievedSource>(sources: T[]): T[] {
+  const seen = new Map<string, T>();
+  for (const source of sources) {
+    const fingerprint = normalizeText(source.text).slice(0, 150);
+    const existing = seen.get(fingerprint);
+    if (!existing || source.score > existing.score) {
+      seen.set(fingerprint, source);
+    }
+  }
+  return [...seen.values()].sort((left, right) => right.score - left.score);
 }

@@ -3,16 +3,9 @@ import { z } from 'zod';
 import { chatModel } from '../common/model';
 import { config } from '../config';
 import { parseStructuredOutput, schemaInstruction } from './json';
+import { REWRITER_SYSTEM_PROMPT } from './prompts';
 import type { ChatMessage } from './schemas';
 
-const REWRITER_SYSTEM_PROMPT = [
-  'You rewrite the latest user message into a self-contained search question in Belarusian.',
-  'Resolve pronouns, omitted subjects, and references to previous turns using the chat history.',
-  'Preserve the original intent and topic; do not add new constraints, examples, or guesses.',
-  'If the message is already self-contained, return it unchanged.',
-  'Never answer the question or add explanations — return only the rewritten question text.',
-  'Keep the answer in Belarusian regardless of the chat language.',
-].join(' ');
 
 const StandaloneQuestionSchema = z.object({
   standaloneQuestion: z.string().min(1),
