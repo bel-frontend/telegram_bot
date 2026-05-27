@@ -15,6 +15,7 @@ import { FolkWisdomSearchTool } from "../agents/folkWisdomSearchTool";
 import { RagSearchTool } from "../agents/ragSearchTool";
 import { DialectDictionarySearchTool } from "../agents/dialectDictionarySearchTool";
 import { ChatOrchestratorAgent } from "../agents/chatOrchestrator";
+import { initPrompts } from "../agents/prompts";
 import { config } from "../config";
 import type { ChatAgentResponse, ChatMessage } from "../agents/schemas";
 
@@ -23,6 +24,9 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 if (!DISCORD_TOKEN) {
   throw new Error("DISCORD_TOKEN environment variable is required.");
 }
+
+// Load prompts from Goman before anything else
+await initPrompts();
 
 // Initialise the RAG stack once at startup
 const qdrant = createQdrantClient();
