@@ -205,8 +205,17 @@ async function handleMessageCreate(message: Message): Promise<void> {
       { role: "user", content: question },
     ];
     const result = await orchestrator.chat(messages);
-    const reply = result.answer.slice(0, 2000);
-    await message.reply(reply);
+    const reply = result.answer;
+    const chunks = splitDiscordMessage(reply);
+    let firstChunkSent = false;
+    for (const chunk of chunks) {
+      if (!firstChunkSent) {
+        await message.reply(chunk);
+        firstChunkSent = true;
+      } else {
+        await sendText(message.channel, chunk);
+      }
+    }
     if (isDebugEnabled(conversationKey)) {
       const debugText = formatRagDebug(result);
       console.log(debugText);
@@ -562,20 +571,49 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+const DISCORD_MAX_MESSAGE_LENGTH = 2000;
+const DISCORD_CHUNK_TARGET = 1900;
+
 function splitDiscordMessage(text: string): string[] {
+  if (!text) return [];
+  if (text.length <= DISCORD_MAX_MESSAGE_LENGTH) return [text];
+
   const chunks: string[] = [];
-  let current = "";
+  let remaining = text;
 
-  for (const line of text.split("\n")) {
-    if (`${current}\n${line}`.length > 1900) {
-      chunks.push(current);
-      current = line;
-      continue;
-    }
+  while (remaining.length > DISCORD_MAX_MESSAGE_LENGTH) {
+    const window = remaining.slice(0, DISCORD_MAX_MESSAGE_LENGTH);
+    let cut = findSplitIndex(window);
+    if (cut <= 0) cut = DISCORD_MAX_MESSAGE_LENGTH;
 
-    current = current ? `${current}\n${line}` : line;
+    chunks.push(remaining.slice(0, cut).replace(/\s+$/u, ""));
+    remaining = remaining.slice(cut).replace(/^\s+/u, "");
   }
 
-  if (current) chunks.push(current);
+  if (remaining.length > 0) chunks.push(remaining);
   return chunks;
+}
+
+function findSplitIndex(window: string): number {
+  // Prefer paragraph break, then newline, then sentence end, then space.
+  const candidates = [
+    window.lastIndexOf("\n\n", DISCORD_MAX_MESSAGE_LENGTH),
+    window.lastIndexOf("\n", DISCORD_MAX_MESSAGE_LENGTH),
+    lastSentenceBoundary(window),
+    window.lastIndexOf(" ", DISCORD_MAX_MESSAGE_LENGTH),
+  ];
+
+  for (const index of candidates) {
+    if (index >= DISCORD_CHUNK_TARGET / 2) {
+      return index + (window[index] === "\n" || window[index] === " " ? 1 : 1);
+    }
+  }
+  return -1;
+}
+
+function lastSentenceBoundary(window: string): number {
+  const match = window.match(/[.!?…][\s")»\]]*(?=\s|$)/gu);
+  if (!match) return -1;
+  const last = match[match.length - 1];
+  return window.lastIndexOf(last) + last.length;
 }
