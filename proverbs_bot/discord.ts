@@ -121,7 +121,11 @@ function registerDiscordHandlers(target: Client): void {
     void reloginDiscord("session invalidated");
   });
 
-  target.on("messageCreate", handleMessageCreate);
+  target.on("messageCreate", (message: Message) => {
+    void handleMessageCreate(message).catch((error) => {
+      console.error("Discord unhandled messageCreate error:", error);
+    });
+  });
 }
 
 async function handleMessageCreate(message: Message): Promise<void> {
@@ -227,13 +231,21 @@ startDiscordWatchdog();
 
 async function sendTyping(channel: Message["channel"]): Promise<void> {
   if ("sendTyping" in channel && typeof channel.sendTyping === "function") {
-    await channel.sendTyping();
+    try {
+      await channel.sendTyping();
+    } catch (error) {
+      console.warn("Discord sendTyping failed:", error);
+    }
   }
 }
 
 async function sendText(channel: Message["channel"], text: string): Promise<void> {
   if ("send" in channel && typeof channel.send === "function") {
-    await channel.send(text);
+    try {
+      await channel.send(text);
+    } catch (error) {
+      console.warn("Discord send failed:", error);
+    }
   }
 }
 
