@@ -184,7 +184,7 @@ async function handleMessageCreate(message: Message): Promise<void> {
   }
 
   console.log(
-    `Discord handling message: channel=${message.channel.id}, author=${message.author.id}, dm=${isDM}, mention=${isMentioned}, replyToBot=${isReplyToBot}`,
+    `[${new Date().toISOString()}] Discord handling message: channel=${message.channel.id}, author=${message.author.username}(${message.author.id}), dm=${isDM}, mention=${isMentioned}, replyToBot=${isReplyToBot}`,
   );
 
   const previousMessages = conversations.get(conversationKey) || [];
