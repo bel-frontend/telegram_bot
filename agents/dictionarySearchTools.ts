@@ -123,7 +123,9 @@ interface WeightedQuery {
 }
 
 function buildDictionaryQueries(plan: SearchPlan, hints: string[]): WeightedQuery[] {
+  const lookupTerms = extractLookupTerms(plan.coreQuery);
   const queryStrings = [
+    ...lookupTerms,
     plan.coreQuery,
     ...plan.expandedQueries,
     ...(plan.semanticFacets || []),
@@ -133,6 +135,25 @@ function buildDictionaryQueries(plan: SearchPlan, hints: string[]): WeightedQuer
 
   return uniqueQueries.map((query) => ({
     query,
-    weight: query === plan.coreQuery ? 1.2 : 1,
+    weight: lookupTerms.includes(query) ? 2.1 : query === plan.coreQuery ? 1.2 : 1,
   }));
+}
+
+function extractLookupTerms(query: string): string[] {
+  const quoted = [...query.matchAll(/[\"“«](.+?)[\"”»]/g)]
+    .map((match) => match[1]?.trim())
+    .filter(Boolean);
+  const afterWordLabel = query.match(/(?:слова|слово|word)\s+["“«]?([\p{L}'’ -]{2,40})["”»]?/iu);
+  const direct = afterWordLabel?.[1]?.trim();
+
+  const candidates = [...quoted, direct].filter((item): item is string => Boolean(item));
+  return [...new Set(candidates.map(cleanLookupTerm).filter(Boolean))].slice(0, 4);
+}
+
+function cleanLookupTerm(term: string): string {
+  return term
+    .replace(/\s+(у|ў|в)\s+.+$/iu, '')
+    .replace(/[^\p{L}'’ -]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }

@@ -26,13 +26,15 @@
     "tlumach/Суднiк, Крыўко - Тлумачальны слоўнiк беларускай лiтаратурнай мовы - 2002.pdf": {
       "sha256": "12e8c02e64c3591261bcfd6826161f7d0bf4ba0412e640856d0bf162fbccee73",
       "pages": 787,
-      "chunks": 6427,
+      "chunks": 6625,
       "category": "tlumach",
       "dictionaryType": "explanatory",
       "qdrantCollection": "lesson11_pdf_documents",
       "embeddingModel": "text-embedding-3-large",
       "embeddingDimensions": 3072,
-      "indexedAt": "2026-05-29T09:08:30.426Z"
+      "extractionMode": "columns",
+      "extractorVersion": 5,
+      "indexedAt": "2026-05-29T10:08:22.780Z"
     },
     "translate/Kaśpiarovič. Viciebski krajovy słoŭnik (2011).pdf": {
       "sha256": "46981aa9a813b415843ff73ff40146635c031a1ecafa23aaff42fe50faf4dd18",

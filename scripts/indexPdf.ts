@@ -13,6 +13,8 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_PDF_ROOT = path.join(process.cwd(), 'pdf');
 const TEXT_CACHE_ROOT = path.join(process.cwd(), '.rag-cache', 'pdf-text');
 const MANIFEST_VERSION = 1;
+const DEFAULT_EXTRACTOR_VERSION = 1;
+const COLUMN_EXTRACTOR_VERSION = 5;
 const CHUNK_SIZE = 1_400;
 const CHUNK_OVERLAP = 180;
 const EMBEDDING_BATCH_SIZE = 64;
@@ -27,6 +29,8 @@ interface PdfDocument {
   title: string;
   cacheKey: string;
   sha256: string;
+  extractionMode: 'layout' | 'columns';
+  extractorVersion: number;
 }
 
 interface TextChunk {
@@ -50,6 +54,8 @@ interface IndexedManifestEntry {
   qdrantCollection: string;
   embeddingModel: string;
   embeddingDimensions: number;
+  extractionMode?: 'layout' | 'raw' | 'columns';
+  extractorVersion?: number;
   indexedAt: string;
 }
 
@@ -206,6 +212,8 @@ async function main(): Promise<void> {
       qdrantCollection: config.qdrant.collection,
       embeddingModel: config.embeddings.model,
       embeddingDimensions: config.embeddings.dimensions,
+      extractionMode: item.document.extractionMode,
+      extractorVersion: item.document.extractorVersion,
       indexedAt: new Date().toISOString(),
     };
   }
@@ -269,6 +277,9 @@ async function documentMetadata(root: string, filePath: string): Promise<PdfDocu
     title: fileName.replace(/\.pdf$/i, ''),
     cacheKey: createHash('sha256').update(relativePath).digest('hex').slice(0, 16),
     sha256: await fileSha256(filePath),
+    extractionMode: dictionaryType === 'explanatory' ? 'columns' : 'layout',
+    extractorVersion:
+      dictionaryType === 'explanatory' ? COLUMN_EXTRACTOR_VERSION : DEFAULT_EXTRACTOR_VERSION,
   };
 }
 
@@ -282,8 +293,15 @@ function isAlreadyIndexed(document: PdfDocument, entry?: IndexedManifestEntry): 
       entry.sha256 === document.sha256 &&
       entry.qdrantCollection === config.qdrant.collection &&
       entry.embeddingModel === config.embeddings.model &&
-      entry.embeddingDimensions === config.embeddings.dimensions
+      entry.embeddingDimensions === config.embeddings.dimensions &&
+      normalizeManifestExtractionMode(entry.extractionMode) === document.extractionMode &&
+      (entry.extractorVersion || DEFAULT_EXTRACTOR_VERSION) === document.extractorVersion
   );
+}
+
+function normalizeManifestExtractionMode(mode: IndexedManifestEntry['extractionMode']): PdfDocument['extractionMode'] {
+  if (mode === 'columns') return 'columns';
+  return 'layout';
 }
 
 async function readManifest(filePath: string): Promise<IndexedManifest> {
@@ -330,6 +348,8 @@ async function syncManifestFromQdrant(
       qdrantCollection: config.qdrant.collection,
       embeddingModel: config.embeddings.model,
       embeddingDimensions: config.embeddings.dimensions,
+      extractionMode: document.extractionMode,
+      extractorVersion: document.extractorVersion,
       indexedAt: new Date().toISOString(),
     };
     console.log(`[index-pdf] Manifest synced ${document.relativePath}: ${chunkCount} chunks.`);
@@ -370,14 +390,125 @@ async function readPageCount(filePath: string): Promise<number> {
   return Number(match[1]);
 }
 
-async function extractPageText(filePath: string, pageNumber: number): Promise<string> {
+async function extractPageText(document: PdfDocument, pageNumber: number): Promise<string> {
+  if (document.extractionMode === 'columns') {
+    return extractPageTextByColumns(document.filePath, pageNumber);
+  }
+
   const { stdout } = await execFileAsync(
     'pdftotext',
-    ['-f', String(pageNumber), '-l', String(pageNumber), '-layout', filePath, '-'],
+    [
+      '-f',
+      String(pageNumber),
+      '-l',
+      String(pageNumber),
+      '-layout',
+      document.filePath,
+      '-',
+    ],
     { maxBuffer: 16 * 1024 * 1024 }
   );
 
   return stdout;
+}
+
+async function extractPageTextByColumns(filePath: string, pageNumber: number): Promise<string> {
+  const { stdout } = await execFileAsync(
+    'pdftotext',
+    ['-f', String(pageNumber), '-l', String(pageNumber), '-bbox-layout', filePath, '-'],
+    { maxBuffer: 32 * 1024 * 1024 }
+  );
+  const pageMatch = stdout.match(/<page[^>]*width="([^"]+)"[^>]*height="([^"]+)"/);
+  const pageWidth = pageMatch ? Number(pageMatch[1]) : 0;
+  const words = parseBboxWords(stdout);
+  const columns = groupWordsIntoColumns(words, pageWidth);
+
+  return columns
+    .map((column) => column.map((line) => line.map((word) => word.text).join(' ')).join('\n'))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+interface BboxWord {
+  xMin: number;
+  yMin: number;
+  text: string;
+}
+
+function parseBboxWords(xml: string): BboxWord[] {
+  const words: BboxWord[] = [];
+  const wordPattern = /<word\b([^>]*)>([\s\S]*?)<\/word>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = wordPattern.exec(xml))) {
+    const attrs = match[1];
+    const xMin = numberAttr(attrs, 'xMin');
+    const yMin = numberAttr(attrs, 'yMin');
+    if (xMin === null || yMin === null) continue;
+
+    const text = decodeXmlText(match[2]).trim();
+    if (!text) continue;
+
+    words.push({ xMin, yMin, text });
+  }
+
+  return words;
+}
+
+function groupWordsIntoColumns(words: BboxWord[], pageWidth: number): BboxWord[][][] {
+  const contentWords = words.filter((word) => !isLikelyPageNumber(word, pageWidth));
+  const usableWidth = pageWidth || Math.max(...contentWords.map((word) => word.xMin), 1);
+  const boundaries = [usableWidth * 0.34, usableWidth * 0.665];
+  const columnWords: BboxWord[][] = [[], [], []];
+
+  for (const word of contentWords) {
+    const columnIndex = word.xMin < boundaries[0] ? 0 : word.xMin < boundaries[1] ? 1 : 2;
+    columnWords[columnIndex].push(word);
+  }
+
+  return columnWords.map(groupWordsIntoLines);
+}
+
+function groupWordsIntoLines(words: BboxWord[]): BboxWord[][] {
+  const sorted = [...words].sort((left, right) => left.yMin - right.yMin || left.xMin - right.xMin);
+  const lines: BboxWord[][] = [];
+
+  for (const word of sorted) {
+    const currentLine = lines.at(-1);
+    if (!currentLine || Math.abs(currentLine[0].yMin - word.yMin) > 3.2) {
+      lines.push([word]);
+      continue;
+    }
+
+    currentLine.push(word);
+  }
+
+  return lines.map((line) => line.sort((left, right) => left.xMin - right.xMin));
+}
+
+function isLikelyPageNumber(word: BboxWord, pageWidth: number): boolean {
+  if (!/^\d+$/.test(word.text)) return false;
+  if (word.yMin > 45) return false;
+  if (!pageWidth) return true;
+
+  return word.xMin > pageWidth * 0.35 && word.xMin < pageWidth * 0.65;
+}
+
+function numberAttr(attrs: string, name: string): number | null {
+  const match = attrs.match(new RegExp(`${name}="([^"]+)"`));
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 async function readCachedPageText(
@@ -385,13 +516,17 @@ async function readCachedPageText(
   pageNumber: number,
   mode: 'text' | 'ocr'
 ): Promise<string> {
-  const cachePath = path.join(TEXT_CACHE_ROOT, document.cacheKey, `${mode}-${pageNumber}.txt`);
+  const cachePrefix =
+    mode === 'text'
+      ? `text-${document.extractionMode}-v${document.extractorVersion}`
+      : `ocr-v${DEFAULT_EXTRACTOR_VERSION}`;
+  const cachePath = path.join(TEXT_CACHE_ROOT, document.cacheKey, `${cachePrefix}-${pageNumber}.txt`);
   const cached = await readTextIfExists(cachePath);
   if (cached !== null) return cached;
 
   const text =
     mode === 'text'
-      ? await extractPageText(document.filePath, pageNumber)
+      ? await extractPageText(document, pageNumber)
       : await ocrPage(document.filePath, pageNumber);
   await mkdir(path.dirname(cachePath), { recursive: true });
   await writeFile(cachePath, text);
@@ -468,6 +603,7 @@ function findChunkBoundary(text: string, start: number, hardEnd: number): number
 function normalizeExtractedText(text: string): string {
   return text
     .replace(/\r/g, '\n')
+    .replace(/([\p{L}])-\n([\p{Ll}])/gu, '$1$2')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{4,}/g, '\n\n')
     .replace(/[ \t]{2,}/g, ' ')
@@ -483,6 +619,8 @@ function payloadForChunk(chunk: TextChunk): Record<string, unknown> {
     dictionaryType: chunk.document.dictionaryType,
     title: chunk.document.title,
     pdfSha256: chunk.document.sha256,
+    extractionMode: chunk.document.extractionMode,
+    extractorVersion: chunk.document.extractorVersion,
     chunkIndex: chunk.chunkIndex,
     loc: {
       pageNumber: chunk.pageNumber,
