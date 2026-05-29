@@ -14,6 +14,11 @@ import { HybridRetriever } from "../rag/hybridRetriever";
 import { FolkWisdomSearchTool } from "../agents/folkWisdomSearchTool";
 import { RagSearchTool } from "../agents/ragSearchTool";
 import { DialectDictionarySearchTool } from "../agents/dialectDictionarySearchTool";
+import {
+  createExplanatoryDictionarySearchTool,
+  createOrthographicDictionarySearchTool,
+  createTranslationDictionarySearchTool,
+} from "../agents/dictionarySearchTools";
 import { ChatOrchestratorAgent } from "../agents/chatOrchestrator";
 import { initPrompts } from "../agents/prompts";
 import { config } from "../config";
@@ -39,10 +44,22 @@ const ragSearchTool = new RagSearchTool(hybridRetriever);
 const dialectDictionarySearchTool = new DialectDictionarySearchTool(
   hybridRetriever,
 );
+const orthographicDictionarySearchTool = createOrthographicDictionarySearchTool(
+  hybridRetriever,
+);
+const translationDictionarySearchTool = createTranslationDictionarySearchTool(
+  hybridRetriever,
+);
+const explanatoryDictionarySearchTool = createExplanatoryDictionarySearchTool(
+  hybridRetriever,
+);
 const orchestrator = new ChatOrchestratorAgent(
   folkWisdomTool,
   ragSearchTool,
   dialectDictionarySearchTool,
+  orthographicDictionarySearchTool,
+  translationDictionarySearchTool,
+  explanatoryDictionarySearchTool,
 );
 const conversations = new Map<string, ChatMessage[]>();
 const debugConversations = new Set<string>();
@@ -52,8 +69,8 @@ const DISCORD_NOT_READY_RELOGIN_MS = 5 * 60_000;
 const DISCORD_PROACTIVE_RELOGIN_MS = minutesFromEnv("DISCORD_PROACTIVE_RELOGIN_MINUTES", 60) * 60_000;
 const DISCORD_LOGIN_TIMEOUT_MS = 60_000;
 const DISCORD_GREETING_CHANNEL_ID = process.env.DISCORD_GREETING_CHANNEL_ID;
-const HELP_MESSAGE = `Прывітанне! Я  прыказкавы бот, які шукае прыказкі, прымаўкі, народныя мудрасці, праклёны, грозьбы, дыялектныя словы і выразы ў калекцыі (папаўняецца).
-Можна пісаць звычайным тэкстам: шукаць прыказкі, прымаўкі, народныя мудрасці, праклёны, гразьбы, дыялектныя словы і выразы.
+const HELP_MESSAGE = `Прывітанне! Я  слоўнікавы бот, які шукае прыказкі, прымаўкі, народныя мудрасці, праклёны, грозьбы, дыялектныя словы і выразы, пераклады, правапіс і тлумачэнні слоў у калекцыі PDF.
+Можна пісаць звычайным тэкстам: шукаць прыказкі, перакладаць з расейскай на беларускую і назад, правяраць напісанне, тлумачыць значэнні слоў.
 
 Каманды:
 reset / рэзэт — пачаць размову нанова.`;

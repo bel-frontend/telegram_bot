@@ -2,6 +2,7 @@ import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages
 import { chatModel } from '../common/model';
 import { config } from '../config';
 import type { DialectDictionarySearchTool } from './dialectDictionarySearchTool';
+import type { FilteredDictionarySearchTool } from './dictionarySearchTools';
 import type { FolkWisdomSearchTool } from './folkWisdomSearchTool';
 import { LlmReranker } from './llmReranker';
 import { DECISION_SYSTEM_PROMPT, LIST_FINAL_SYSTEM_PROMPT } from './prompts';
@@ -36,6 +37,9 @@ export class ChatOrchestratorAgent {
     private readonly folkWisdomSearchTool: FolkWisdomSearchTool,
     private readonly ragSearchTool: RagSearchTool,
     private readonly dialectDictionarySearchTool: DialectDictionarySearchTool,
+    private readonly orthographicDictionarySearchTool: FilteredDictionarySearchTool,
+    private readonly translationDictionarySearchTool: FilteredDictionarySearchTool,
+    private readonly explanatoryDictionarySearchTool: FilteredDictionarySearchTool,
     private readonly queryPlannerAgent = new QueryPlannerAgent(),
     private readonly questionRewriterAgent = new QuestionRewriterAgent()
   ) {}
@@ -48,6 +52,12 @@ export class ChatOrchestratorAgent {
 
     const decision = requiresDialectDictionaryTool(effectiveQuestion)
       ? forcedSearchDecision('search_dialect_dictionary', effectiveQuestion)
+      : requiresOrthographicDictionaryTool(effectiveQuestion)
+      ? forcedSearchDecision('search_orthographic_dictionary', effectiveQuestion)
+      : requiresTranslationDictionaryTool(effectiveQuestion)
+      ? forcedSearchDecision('search_translation_dictionary', effectiveQuestion)
+      : requiresExplanatoryDictionaryTool(effectiveQuestion)
+      ? forcedSearchDecision('search_explanatory_dictionary', effectiveQuestion)
       : requiresFolkWisdomTool(effectiveQuestion)
       ? forcedFolkWisdomDecision(effectiveQuestion)
       : await this.decide(messages, effectiveQuestion);
@@ -204,6 +214,18 @@ export class ChatOrchestratorAgent {
       return this.ragSearchTool.invokePlan(plan);
     }
 
+    if (plan.tool === 'orthographic_dictionary_search') {
+      return this.orthographicDictionarySearchTool.invokePlan(plan);
+    }
+
+    if (plan.tool === 'translation_dictionary_search') {
+      return this.translationDictionarySearchTool.invokePlan(plan);
+    }
+
+    if (plan.tool === 'explanatory_dictionary_search') {
+      return this.explanatoryDictionarySearchTool.invokePlan(plan);
+    }
+
     return this.folkWisdomSearchTool.invokePlan(plan);
   }
 
@@ -221,7 +243,7 @@ export class ChatOrchestratorAgent {
       new SystemMessage(
         schemaInstruction(
           'OrchestratorDecision',
-          '{"action":"answer_directly|search_rag|search_folk_wisdom|search_dialect_dictionary","searchQuery":"string optional","directAnswer":"string optional","reason":"string"}'
+          '{"action":"answer_directly|search_rag|search_folk_wisdom|search_dialect_dictionary|search_orthographic_dictionary|search_translation_dictionary|search_explanatory_dictionary","searchQuery":"string optional","directAnswer":"string optional","reason":"string"}'
         )
       ),
       new HumanMessage(
@@ -274,6 +296,9 @@ export class ChatOrchestratorAgent {
             sources: searchOutput.sources.map((source, index) => ({
               id: index + 1,
               fileName: source.fileName,
+              category: source.category,
+              dictionaryType: source.dictionaryType,
+              title: source.title,
               page: source.page,
               score: source.score,
               relevanceScore:
@@ -309,6 +334,18 @@ function latestUserMessage(messages: ChatMessage[]): string {
 function fallbackDecision(latestQuestion: string): OrchestratorDecision {
   if (requiresDialectDictionaryTool(latestQuestion)) {
     return forcedSearchDecision('search_dialect_dictionary', latestQuestion);
+  }
+
+  if (requiresOrthographicDictionaryTool(latestQuestion)) {
+    return forcedSearchDecision('search_orthographic_dictionary', latestQuestion);
+  }
+
+  if (requiresTranslationDictionaryTool(latestQuestion)) {
+    return forcedSearchDecision('search_translation_dictionary', latestQuestion);
+  }
+
+  if (requiresExplanatoryDictionaryTool(latestQuestion)) {
+    return forcedSearchDecision('search_explanatory_dictionary', latestQuestion);
   }
 
   if (requiresFolkWisdomTool(latestQuestion)) {
@@ -352,6 +389,27 @@ function requiresDialectDictionaryTool(question: string): boolean {
   );
 }
 
+function requiresOrthographicDictionaryTool(question: string): boolean {
+  return (
+    /\b(spelling|orthographic|orthography)\b/i.test(question) ||
+    /(арфаграф|правапіс|як\s+пішацца|як\s+правільна\s+пісаць|напісанн[ея]|форма\s+слова)/iu.test(question)
+  );
+}
+
+function requiresTranslationDictionaryTool(question: string): boolean {
+  return (
+    /\b(translate|translation|russian|belarusian)\b/i.test(question) ||
+    /(пераклад|перакласці|як\s+па-беларуску|як\s+па-руску|расейск|руск[аіую]|беларуск[аіую]\s+на\s+руск)/iu.test(question)
+  );
+}
+
+function requiresExplanatoryDictionaryTool(question: string): boolean {
+  return (
+    /\b(meaning|definition|define|explain)\b/i.test(question) ||
+    /(што\s+значыць|значэнн[ея]|азначэнн[ея]|тлумачэнн[ея]|растлумач|тлумачальны\s+слоўнік)/iu.test(question)
+  );
+}
+
 function forcedSearchDecision(
   action: Exclude<OrchestratorDecision['action'], 'answer_directly'>,
   latestQuestion: string
@@ -369,6 +427,9 @@ function isForcedSearchDecision(decision: OrchestratorDecision): boolean {
 
 function toolForDecision(decision: OrchestratorDecision): ToolName {
   if (decision.action === 'search_dialect_dictionary') return 'dialect_dictionary_search';
+  if (decision.action === 'search_orthographic_dictionary') return 'orthographic_dictionary_search';
+  if (decision.action === 'search_translation_dictionary') return 'translation_dictionary_search';
+  if (decision.action === 'search_explanatory_dictionary') return 'explanatory_dictionary_search';
   if (decision.action === 'search_rag') return 'rag_search';
   if (decision.action === 'search_folk_wisdom') return 'folk_wisdom_search';
   return 'chat';

@@ -18,6 +18,10 @@ export interface ScrollResult {
   payload?: Payload;
 }
 
+export type PayloadFilter = {
+  must?: Array<{ key: string; match: { value: string | number | boolean } }>;
+};
+
 export class QdrantClient {
   constructor(
     private readonly baseUrl: string,
@@ -67,7 +71,19 @@ export class QdrantClient {
     });
   }
 
-  async search(collection: string, vector: Vector, limit: number): Promise<SearchResult[]> {
+  async deletePoints(collection: string, filter: PayloadFilter): Promise<void> {
+    await this.request(`/collections/${collection}/points/delete?wait=true`, {
+      method: 'POST',
+      body: { filter },
+    });
+  }
+
+  async search(
+    collection: string,
+    vector: Vector,
+    limit: number,
+    filter?: PayloadFilter
+  ): Promise<SearchResult[]> {
     const data = await this.request<{ result: SearchResult[] }>(
       `/collections/${collection}/points/search`,
       {
@@ -75,6 +91,7 @@ export class QdrantClient {
         body: {
           vector,
           limit,
+          ...(filter ? { filter } : {}),
           with_payload: true,
         },
       }
@@ -97,7 +114,8 @@ export class QdrantClient {
   async scrollPayloads(
     collection: string,
     limit = 256,
-    offset?: string | number
+    offset?: string | number,
+    filter?: PayloadFilter
   ): Promise<{ points: ScrollResult[]; nextOffset?: string | number }> {
     const data = await this.request<{
       result: {
@@ -109,6 +127,7 @@ export class QdrantClient {
       body: {
         limit,
         offset,
+        ...(filter ? { filter } : {}),
         with_payload: true,
         with_vector: false,
       },

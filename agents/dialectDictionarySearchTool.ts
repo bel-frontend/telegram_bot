@@ -1,4 +1,5 @@
 import { config } from '../config';
+import type { PayloadFilter } from '../qdrant/client';
 import type { HybridRetriever } from '../rag/hybridRetriever';
 import {
   collectSearchResults,
@@ -50,11 +51,14 @@ export class DialectDictionarySearchTool {
       fallbackLimit: 12,
       broadMode: plan.resultMode === 'list' || plan.resultMode === 'section' || plan.resultMode === 'explore',
     });
+    const filter: PayloadFilter = {
+      must: [{ key: 'dictionaryType', match: { value: 'dialect' } }],
+    };
     const searchResults = await Promise.all(
       queries.map(async (searchQuery): Promise<QueryResultSet> => ({
         query: searchQuery.query,
         weight: searchQuery.weight,
-        sources: await this.retriever.retrieve(searchQuery.query, perQueryLimit),
+        sources: await this.retriever.retrieve(searchQuery.query, perQueryLimit, { filter }),
       }))
     );
     const { sources, queryBreakdown } = collectSearchResults({

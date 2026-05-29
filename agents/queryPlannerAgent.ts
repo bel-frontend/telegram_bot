@@ -26,7 +26,7 @@ export class QueryPlannerAgent {
       new SystemMessage(
         schemaInstruction(
           'SearchPlan',
-          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|exact_phrase","coreQuery":"string","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"targetBook":"any|vushatski_slovazbor|proverbs_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search","reason":"string"}'
+          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|orthographic_lookup|translation_lookup|explanatory_lookup|exact_phrase","coreQuery":"string","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"targetBook":"any|vushatski_slovazbor|proverbs_dictionary|orthographic_dictionary|translation_dictionary|explanatory_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search|orthographic_dictionary_search|translation_dictionary_search|explanatory_dictionary_search","reason":"string"}'
         )
       ),
       new HumanMessage(
@@ -54,7 +54,7 @@ export function fallbackPlan(query: string, tool: ToolName): SearchPlan {
     semanticFacets: fallbackSemanticFacets(query),
     resultMode,
     desiredResultCount: defaultResultCount(resultMode, tool),
-    targetBook: tool === 'dialect_dictionary_search' ? 'vushatski_slovazbor' : 'any',
+    targetBook: fallbackTargetBook(tool),
     tool,
     reason: 'Fallback search plan.',
   });
@@ -92,9 +92,20 @@ function normalizePlan(plan: UnnormalizedSearchPlan): SearchPlan {
 
 function intentForTool(tool: ToolName): SearchPlan['intent'] {
   if (tool === 'dialect_dictionary_search') return 'dialect_definition';
+  if (tool === 'orthographic_dictionary_search') return 'orthographic_lookup';
+  if (tool === 'translation_dictionary_search') return 'translation_lookup';
+  if (tool === 'explanatory_dictionary_search') return 'explanatory_lookup';
   if (tool === 'folk_wisdom_search') return 'folk_wisdom';
   if (tool === 'chat') return 'direct_chat';
   return 'general_rag';
+}
+
+function fallbackTargetBook(tool: ToolName): SearchPlan['targetBook'] {
+  if (tool === 'dialect_dictionary_search') return 'vushatski_slovazbor';
+  if (tool === 'orthographic_dictionary_search') return 'orthographic_dictionary';
+  if (tool === 'translation_dictionary_search') return 'translation_dictionary';
+  if (tool === 'explanatory_dictionary_search') return 'explanatory_dictionary';
+  return 'any';
 }
 
 function fallbackResultMode(query: string, tool: ToolName): SearchPlan['resultMode'] {

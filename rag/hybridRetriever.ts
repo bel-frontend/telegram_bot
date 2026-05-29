@@ -1,10 +1,12 @@
 import { config } from '../config';
+import type { PayloadFilter } from '../qdrant/client';
 import type { RetrievedSource } from './types';
 import type { LexicalRetriever } from './lexicalRetriever';
 import type { QdrantRetriever } from './retriever';
 
 export interface HybridRetrieveOptions {
   fileNameIncludes?: string;
+  filter?: PayloadFilter;
 }
 
 // Standard k value from the RRF paper. Larger k dampens rank differences,
@@ -23,7 +25,7 @@ export class HybridRetriever {
     options?: HybridRetrieveOptions
   ): Promise<RetrievedSource[]> {
     const [vectorSources, lexicalSources] = await Promise.allSettled([
-      this.vectorRetriever.retrieve(query, limit),
+      this.vectorRetriever.retrieve(query, limit, options ? { filter: options.filter } : undefined),
       this.lexicalRetriever.retrieve(query, limit, options),
     ]);
 

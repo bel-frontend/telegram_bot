@@ -1,6 +1,11 @@
 import { config } from '../config';
-import type { QdrantClient, Payload } from '../qdrant/client';
+import type { Payload, PayloadFilter, QdrantClient } from '../qdrant/client';
 import type { RetrievedSource } from './types';
+
+export interface LexicalRetrieveOptions {
+  fileNameIncludes?: string;
+  filter?: PayloadFilter;
+}
 
 export class LexicalRetriever {
   constructor(private readonly qdrant: QdrantClient) {}
@@ -8,7 +13,7 @@ export class LexicalRetriever {
   async retrieve(
     query: string,
     limit = config.server.topK,
-    options?: { fileNameIncludes?: string }
+    options?: LexicalRetrieveOptions
   ): Promise<RetrievedSource[]> {
     const terms = extractTerms(query);
     if (terms.length === 0) return [];
@@ -17,7 +22,12 @@ export class LexicalRetriever {
     let offset: string | number | undefined;
 
     do {
-      const page = await this.qdrant.scrollPayloads(config.qdrant.collection, 256, offset);
+      const page = await this.qdrant.scrollPayloads(
+        config.qdrant.collection,
+        256,
+        offset,
+        options?.filter
+      );
 
       for (const point of page.points) {
         const payload = point.payload || {};
@@ -140,6 +150,9 @@ function toSource(payload: Payload, score: number): RetrievedSource {
     score,
     source: stringValue(payload.source),
     fileName: stringValue(payload.fileName),
+    category: stringValue(payload.category),
+    dictionaryType: stringValue(payload.dictionaryType),
+    title: stringValue(payload.title),
     page: numberValue(pageNumber),
   };
 }

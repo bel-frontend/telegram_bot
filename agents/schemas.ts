@@ -12,6 +12,9 @@ export const RetrievedSourceSchema = z.object({
   score: z.number(),
   source: z.string().optional(),
   fileName: z.string().optional(),
+  category: z.string().optional(),
+  dictionaryType: z.string().optional(),
+  title: z.string().optional(),
   page: z.number().optional(),
   matchedQueries: z.array(z.string()).optional(),
   vectorRank: z.number().optional(),
@@ -19,7 +22,15 @@ export const RetrievedSourceSchema = z.object({
 });
 
 export const OrchestratorDecisionSchema = z.object({
-  action: z.enum(['answer_directly', 'search_rag', 'search_folk_wisdom', 'search_dialect_dictionary']),
+  action: z.enum([
+    'answer_directly',
+    'search_rag',
+    'search_folk_wisdom',
+    'search_dialect_dictionary',
+    'search_orthographic_dictionary',
+    'search_translation_dictionary',
+    'search_explanatory_dictionary',
+  ]),
   searchQuery: z.string().optional(),
   directAnswer: z.string().optional(),
   reason: z.string(),
@@ -30,6 +41,9 @@ export const ToolNameSchema = z.enum([
   'rag_search',
   'folk_wisdom_search',
   'dialect_dictionary_search',
+  'orthographic_dictionary_search',
+  'translation_dictionary_search',
+  'explanatory_dictionary_search',
 ]);
 
 export const SearchIntentSchema = z.enum([
@@ -38,6 +52,9 @@ export const SearchIntentSchema = z.enum([
   'folk_wisdom',
   'dialect_definition',
   'dialect_section_lookup',
+  'orthographic_lookup',
+  'translation_lookup',
+  'explanatory_lookup',
   'exact_phrase',
 ]);
 
@@ -50,7 +67,14 @@ export const SearchPlanSchema = z.object({
   semanticFacets: z.array(z.string()).optional(),
   resultMode: ResultModeSchema.default('answer'),
   desiredResultCount: z.number().int().min(1).max(80).optional(),
-  targetBook: z.enum(['any', 'vushatski_slovazbor', 'proverbs_dictionary']),
+  targetBook: z.enum([
+    'any',
+    'vushatski_slovazbor',
+    'proverbs_dictionary',
+    'orthographic_dictionary',
+    'translation_dictionary',
+    'explanatory_dictionary',
+  ]),
   tool: ToolNameSchema,
   reason: z.string(),
 });

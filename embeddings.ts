@@ -11,6 +11,7 @@ export function createEmbeddings(): EmbeddingsClient {
   return new OpenAIEmbeddings({
     apiKey: process.env.OPENAI_API_KEY,
     model: config.embeddings.model,
+    dimensions: config.embeddings.dimensions,
     batchSize: 256,
   });
 }

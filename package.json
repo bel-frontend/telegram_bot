@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run index.ts",
+    "index:pdf": "bun run scripts/indexPdf.ts",
     "discord": "bun --env-file=.env run proverbs_bot/discord.ts",
     "telegram": "bun --env-file=.env run bot.js"
   },

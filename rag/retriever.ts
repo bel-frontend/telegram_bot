@@ -1,7 +1,11 @@
 import { config } from '../config';
 import type { EmbeddingsClient } from '../embeddings';
-import type { QdrantClient, Payload } from '../qdrant/client';
+import type { Payload, PayloadFilter, QdrantClient } from '../qdrant/client';
 import type { RetrievedSource } from './types';
+
+export interface QdrantRetrieveOptions {
+  filter?: PayloadFilter;
+}
 
 export class QdrantRetriever {
   constructor(
@@ -9,7 +13,11 @@ export class QdrantRetriever {
     private readonly embeddings: EmbeddingsClient
   ) {}
 
-  async retrieve(query: string, limit = config.server.topK): Promise<RetrievedSource[]> {
+  async retrieve(
+    query: string,
+    limit = config.server.topK,
+    options?: QdrantRetrieveOptions
+  ): Promise<RetrievedSource[]> {
     const vector = await this.embeddings.embedQuery(query);
     if (vector.length !== config.embeddings.dimensions) {
       throw new Error(
@@ -17,7 +25,7 @@ export class QdrantRetriever {
       );
     }
 
-    const results = await this.qdrant.search(config.qdrant.collection, vector, limit);
+    const results = await this.qdrant.search(config.qdrant.collection, vector, limit, options?.filter);
 
     return results
       .filter((result) => result.score >= config.search.minScore)
@@ -36,6 +44,9 @@ function toSource(payload: Payload, score: number): RetrievedSource {
     score,
     source: stringValue(payload.source),
     fileName: stringValue(payload.fileName),
+    category: stringValue(payload.category),
+    dictionaryType: stringValue(payload.dictionaryType),
+    title: stringValue(payload.title),
     page: numberValue(pageNumber),
   };
 }
