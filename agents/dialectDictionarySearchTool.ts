@@ -7,6 +7,7 @@ import {
   resultLimitForMode,
   type QueryResultSet,
 } from '../rag/resultCollector';
+import { focusSourcesOnLookupTerms } from './dictionarySearchTools';
 import { fallbackPlan } from './queryPlannerAgent';
 import type { RagSearchOutput, SearchPlan } from './schemas';
 
@@ -67,11 +68,12 @@ export class DialectDictionarySearchTool {
       perQueryKeep: perQueryLimit,
       diversityBonus: 0.12,
     });
+    const lookupTerms = plan.lookupTerm ? [plan.lookupTerm] : [];
 
     return {
       query: queries.map((item) => item.query).join(' | '),
       found: sources.length > 0,
-      sources,
+      sources: focusSourcesOnLookupTerms(sources, lookupTerms),
       sourceCount: sources.length,
       queryBreakdown,
     };
@@ -84,7 +86,9 @@ interface WeightedQuery {
 }
 
 function buildDialectQueries(plan: SearchPlan): WeightedQuery[] {
+  const lookupTerms = plan.lookupTerm ? [plan.lookupTerm] : [];
   const queryStrings = [
+    ...lookupTerms,
     plan.coreQuery,
     ...plan.expandedQueries,
     ...(plan.semanticFacets || []),
@@ -97,7 +101,7 @@ function buildDialectQueries(plan: SearchPlan): WeightedQuery[] {
   return [
     ...uniqueQueries.map((query) => ({
       query,
-      weight: query === plan.coreQuery ? 1.2 : 1,
+      weight: lookupTerms.includes(query) ? 2.1 : query === plan.coreQuery ? 1.2 : 1,
     })),
     { query: DIALECT_HINTS.join(' '), weight: 0.68 },
   ];

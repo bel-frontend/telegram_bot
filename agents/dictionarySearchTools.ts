@@ -67,11 +67,12 @@ export class FilteredDictionarySearchTool {
       perQueryKeep: perQueryLimit,
       diversityBonus: 0.1,
     });
+    const lookupTerms = plan.lookupTerm ? [plan.lookupTerm] : [];
 
     return {
       query: queries.map((item) => item.query).join(' | '),
       found: sources.length > 0,
-      sources,
+      sources: focusSourcesOnLookupTerms(sources, lookupTerms),
       sourceCount: sources.length,
       queryBreakdown,
     };
@@ -123,7 +124,7 @@ interface WeightedQuery {
 }
 
 function buildDictionaryQueries(plan: SearchPlan, hints: string[]): WeightedQuery[] {
-  const lookupTerms = extractLookupTerms(plan.coreQuery);
+  const lookupTerms = plan.lookupTerm ? [plan.lookupTerm] : [];
   const queryStrings = [
     ...lookupTerms,
     plan.coreQuery,
@@ -139,21 +140,74 @@ function buildDictionaryQueries(plan: SearchPlan, hints: string[]): WeightedQuer
   }));
 }
 
-function extractLookupTerms(query: string): string[] {
-  const quoted = [...query.matchAll(/[\"“«](.+?)[\"”»]/g)]
-    .map((match) => match[1]?.trim())
-    .filter(Boolean);
-  const afterWordLabel = query.match(/(?:слова|слово|word)\s+["“«]?([\p{L}'’ -]{2,40})["”»]?/iu);
-  const direct = afterWordLabel?.[1]?.trim();
+export function focusSourcesOnLookupTerms<T extends { text: string; score: number }>(
+  sources: T[],
+  lookupTerms: string[]
+): T[] {
+  if (lookupTerms.length === 0) return sources;
 
-  const candidates = [...quoted, direct].filter((item): item is string => Boolean(item));
-  return [...new Set(candidates.map(cleanLookupTerm).filter(Boolean))].slice(0, 4);
+  return sources
+    .map((source) => {
+      const exactMatch = containsLookupTerm(source.text, lookupTerms);
+      const focused = focusTextOnLookupTerm(source.text, lookupTerms);
+
+      return {
+        ...source,
+        score: exactMatch ? source.score + 10 : source.score,
+        text: focused,
+      };
+    })
+    .sort((left, right) => right.score - left.score);
 }
 
-function cleanLookupTerm(term: string): string {
-  return term
-    .replace(/\s+(у|ў|в)\s+.+$/iu, '')
-    .replace(/[^\p{L}'’ -]+/gu, ' ')
+function focusTextOnLookupTerm(text: string, lookupTerms: string): string;
+function focusTextOnLookupTerm(text: string, lookupTerms: string[]): string;
+function focusTextOnLookupTerm(text: string, lookupTerms: string | string[]): string {
+  const terms = Array.isArray(lookupTerms) ? lookupTerms : [lookupTerms];
+  const normalizedText = normalizeForLookup(text);
+
+  for (const term of terms) {
+    const normalizedTerm = normalizeForLookup(term);
+    const normalizedIndex = lookupIndex(normalizedText, normalizedTerm);
+    if (normalizedIndex < 0) continue;
+
+    const start = Math.max(0, normalizedIndex - 180);
+    const end = Math.min(text.length, normalizedIndex + 1_000);
+    return text.slice(start, end).trim();
+  }
+
+  return text;
+}
+
+function normalizeForLookup(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[ё]/g, 'е')
+    .replace(/[ў]/g, 'у')
+    .replace(/[^\p{L}\p{N}'’ -]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function containsLookupTerm(text: string, lookupTerms: string[]): boolean {
+  const normalizedText = normalizeForLookup(text);
+
+  return lookupTerms.some((term) => lookupIndex(normalizedText, normalizeForLookup(term)) >= 0);
+}
+
+function lookupIndex(normalizedText: string, normalizedTerm: string): number {
+  if (!normalizedTerm) return -1;
+
+  if (normalizedTerm.includes(' ')) {
+    return normalizedText.indexOf(normalizedTerm);
+  }
+
+  const match = new RegExp(`(^|\\s)${escapeRegExp(normalizedTerm)}($|\\s)`, 'u').exec(normalizedText);
+  if (!match || match.index < 0) return -1;
+
+  return match.index + (match[1] ? match[1].length : 0);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

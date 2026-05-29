@@ -72,12 +72,13 @@ export class FolkWisdomSearchTool {
       perQueryKeep: perQueryLimit,
       diversityBonus: 0.12,
     });
+    const rerankedSources = rerankFolkWisdomSources(sources, plan);
 
     return {
       query: queries.map((item) => item.query).join(' | '),
-      found: sources.length > 0,
-      sources,
-      sourceCount: sources.length,
+      found: rerankedSources.length > 0,
+      sources: rerankedSources,
+      sourceCount: rerankedSources.length,
       queryBreakdown,
     };
   }
@@ -90,14 +91,14 @@ interface WeightedQuery {
 
 function buildFolkWisdomQueries(plan: SearchPlan): WeightedQuery[] {
   const topicFacets = topicFacetQueries(plan);
+  const topicQueries = extractTopicQueries(plan, topicFacets);
   const queryStrings = [
-    ...plan.expandedQueries,
+    ...topicQueries,
     ...(plan.semanticFacets || []),
     ...topicFacets,
+    ...plan.expandedQueries,
     `${plan.coreQuery} прыказкі прымаўкі`,
     `${plan.coreQuery} народная мудрасць выслоўі`,
-    `${plan.coreQuery} прыкметы народныя назіранні`,
-    `${plan.coreQuery} proverbs sayings folk wisdom`,
   ];
   const fallbackHint = FOLK_WISDOM_HINTS.join(' ');
   const uniqueQueries = [...new Set(queryStrings.map((query) => query.trim()).filter(Boolean))].slice(0, 14);
@@ -105,10 +106,87 @@ function buildFolkWisdomQueries(plan: SearchPlan): WeightedQuery[] {
   return [
     ...uniqueQueries.map((query) => ({
       query,
-      weight: query === plan.coreQuery ? 1.15 : 1,
+      weight: topicQueries.includes(query) ? 1.55 : query === plan.coreQuery ? 1.05 : 1,
     })),
-    { query: fallbackHint, weight: 0.72 },
+    { query: fallbackHint, weight: 0.28 },
   ];
+}
+
+function extractTopicQueries(plan: SearchPlan, topicFacets: string[]): string[] {
+  const candidates = [
+    ...(plan.semanticFacets || []),
+    ...topicFacets,
+    stripFolkWisdomServiceWords(plan.coreQuery),
+    ...plan.expandedQueries.map(stripFolkWisdomServiceWords),
+  ];
+
+  return [...new Set(candidates.map((query) => query.trim()).filter((query) => query.length >= 3))].slice(0, 8);
+}
+
+function stripFolkWisdomServiceWords(query: string): string {
+  return query
+    .replace(/\b(proverbs?|sayings?|folk wisdom)\b/giu, ' ')
+    .replace(
+      /(знайдзі|пашукай|падбяры|пакажы|падобныя|некалькі|прыказк[іаўу]*|прымаўк[іаўу]*|прыслоў[еіяў]*|выслоў[еіяў]*|народн\w*\s+мудрасц\w*)/giu,
+      ' '
+    )
+    .replace(/\bпра\b/giu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function rerankFolkWisdomSources<T extends { text: string; score: number; page?: number; fileName?: string }>(
+  sources: T[],
+  plan: SearchPlan
+): T[] {
+  const topicTerms = extractTopicTerms(plan);
+  const hasTopic = topicTerms.length > 0;
+
+  return sources
+    .map((source) => {
+      let score = source.score;
+      const normalizedText = normalizeForFolkSearch(source.text);
+
+      for (const term of topicTerms) {
+        if (normalizedText.includes(term)) {
+          score += 0.8;
+        }
+      }
+
+      if (hasTopic && isIntroductoryProverbPage(source)) {
+        score -= 1.2;
+      }
+
+      return { ...source, score };
+    })
+    .sort((left, right) => right.score - left.score);
+}
+
+function extractTopicTerms(plan: SearchPlan): string[] {
+  const text = [
+    plan.coreQuery,
+    ...plan.expandedQueries,
+    ...(plan.semanticFacets || []),
+    ...topicFacetQueries(plan),
+  ].join(' ');
+  const normalized = stripFolkWisdomServiceWords(normalizeForFolkSearch(text));
+  const stopWords = new Set(['для', 'або', 'і', 'ды', 'па', 'на', 'у', 'ў', 'з', 'са', 'ад', 'да']);
+
+  return [...new Set(normalized.split(/\s+/).filter((word) => word.length >= 4 && !stopWords.has(word)))].slice(0, 10);
+}
+
+function isIntroductoryProverbPage(source: { page?: number; fileName?: string }): boolean {
+  return (source.fileName || '').includes('слоу') && typeof source.page === 'number' && source.page <= 15;
+}
+
+function normalizeForFolkSearch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[ё]/g, 'е')
+    .replace(/[ў]/g, 'у')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function topicFacetQueries(plan: SearchPlan): string[] {

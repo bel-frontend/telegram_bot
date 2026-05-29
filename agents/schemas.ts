@@ -63,6 +63,7 @@ export const ResultModeSchema = z.enum(['answer', 'list', 'section', 'explore'])
 export const SearchPlanSchema = z.object({
   intent: SearchIntentSchema,
   coreQuery: z.string(),
+  lookupTerm: z.string().optional(),
   expandedQueries: z.array(z.string()).min(1),
   semanticFacets: z.array(z.string()).optional(),
   resultMode: ResultModeSchema.default('answer'),

@@ -6,7 +6,7 @@ import type { FilteredDictionarySearchTool } from './dictionarySearchTools';
 import type { FolkWisdomSearchTool } from './folkWisdomSearchTool';
 import { LlmReranker } from './llmReranker';
 import { DECISION_SYSTEM_PROMPT, LIST_FINAL_SYSTEM_PROMPT } from './prompts';
-import { QueryPlannerAgent, fallbackPlan } from './queryPlannerAgent';
+import { QueryPlannerAgent, TOOL_CATALOG } from './queryPlannerAgent';
 import { QuestionRewriterAgent } from './questionRewriterAgent';
 import { RagResultEvaluator } from './ragResultEvaluator';
 import type { RagSearchTool } from './ragSearchTool';
@@ -50,17 +50,7 @@ export class ChatOrchestratorAgent {
     const effectiveQuestion = standaloneQuestion || originalQuestion;
     const wasRewritten = standaloneQuestion !== originalQuestion;
 
-    const decision = requiresDialectDictionaryTool(effectiveQuestion)
-      ? forcedSearchDecision('search_dialect_dictionary', effectiveQuestion)
-      : requiresOrthographicDictionaryTool(effectiveQuestion)
-      ? forcedSearchDecision('search_orthographic_dictionary', effectiveQuestion)
-      : requiresTranslationDictionaryTool(effectiveQuestion)
-      ? forcedSearchDecision('search_translation_dictionary', effectiveQuestion)
-      : requiresExplanatoryDictionaryTool(effectiveQuestion)
-      ? forcedSearchDecision('search_explanatory_dictionary', effectiveQuestion)
-      : requiresFolkWisdomTool(effectiveQuestion)
-      ? forcedFolkWisdomDecision(effectiveQuestion)
-      : await this.decide(messages, effectiveQuestion);
+    const decision = await this.decide(messages, effectiveQuestion);
 
     if (decision.action === 'answer_directly') {
       return {
@@ -249,6 +239,7 @@ export class ChatOrchestratorAgent {
       new HumanMessage(
         JSON.stringify({
           latestQuestion,
+          availableTools: TOOL_CATALOG,
           messages,
         })
       ),
@@ -288,6 +279,7 @@ export class ChatOrchestratorAgent {
           evaluationQualityScore: evaluation.qualityScore,
           evaluationSufficient: evaluation.sufficientForAnswer,
           resultMode: searchPlan.resultMode,
+          lookupTerm: searchPlan.lookupTerm,
           semanticFacets: searchPlan.semanticFacets,
           ragSearch: {
             query: searchOutput.query,
@@ -332,26 +324,6 @@ function latestUserMessage(messages: ChatMessage[]): string {
 }
 
 function fallbackDecision(latestQuestion: string): OrchestratorDecision {
-  if (requiresDialectDictionaryTool(latestQuestion)) {
-    return forcedSearchDecision('search_dialect_dictionary', latestQuestion);
-  }
-
-  if (requiresOrthographicDictionaryTool(latestQuestion)) {
-    return forcedSearchDecision('search_orthographic_dictionary', latestQuestion);
-  }
-
-  if (requiresTranslationDictionaryTool(latestQuestion)) {
-    return forcedSearchDecision('search_translation_dictionary', latestQuestion);
-  }
-
-  if (requiresExplanatoryDictionaryTool(latestQuestion)) {
-    return forcedSearchDecision('search_explanatory_dictionary', latestQuestion);
-  }
-
-  if (requiresFolkWisdomTool(latestQuestion)) {
-    return forcedFolkWisdomDecision(latestQuestion);
-  }
-
   if (/^(hi|hello|вітаю|прывітанне|добры дзень|дзякуй|thanks)/i.test(latestQuestion.trim())) {
     return {
       action: 'answer_directly',
@@ -364,60 +336,6 @@ function fallbackDecision(latestQuestion: string): OrchestratorDecision {
     action: 'search_rag',
     searchQuery: latestQuestion,
     reason: 'Fallback: defaulting to general RAG search.',
-  };
-}
-
-function forcedFolkWisdomDecision(latestQuestion: string): OrchestratorDecision {
-  return {
-    action: 'search_folk_wisdom',
-    searchQuery: latestQuestion,
-    reason: 'Forced tool: the question asks for proverbs, sayings, or other folk wisdom.',
-  };
-}
-
-function requiresFolkWisdomTool(question: string): boolean {
-  return (
-    /\b(proverb|proverbs|saying|sayings|folk wisdom|aphorism|aphorisms)\b/i.test(question) ||
-    /(прыказк|прымаўк|народн\w*\s+мудрасц|прыслоў|выслоў|афарызм)/i.test(question)
-  );
-}
-
-function requiresDialectDictionaryTool(question: string): boolean {
-  return (
-    /\b(curse|curses|threat|threats|dialect|vushatski|slovazbor|baradulin)\b/i.test(question) ||
-    /(пракл[её]н|пракляц|праклін|гразьб|пагроз|дыялект|вушацк|словазбор|барадулін|мясцов\w*\s+выраз)/iu.test(question)
-  );
-}
-
-function requiresOrthographicDictionaryTool(question: string): boolean {
-  return (
-    /\b(spelling|orthographic|orthography)\b/i.test(question) ||
-    /(арфаграф|правапіс|як\s+пішацца|як\s+правільна\s+пісаць|напісанн[ея]|форма\s+слова)/iu.test(question)
-  );
-}
-
-function requiresTranslationDictionaryTool(question: string): boolean {
-  return (
-    /\b(translate|translation|russian|belarusian)\b/i.test(question) ||
-    /(пераклад|перакласці|як\s+па-беларуску|як\s+па-руску|расейск|руск[аіую]|беларуск[аіую]\s+на\s+руск)/iu.test(question)
-  );
-}
-
-function requiresExplanatoryDictionaryTool(question: string): boolean {
-  return (
-    /\b(meaning|definition|define|explain)\b/i.test(question) ||
-    /(што\s+значыць|значэнн[ея]|азначэнн[ея]|тлумачэнн[ея]|растлумач|тлумачальны\s+слоўнік)/iu.test(question)
-  );
-}
-
-function forcedSearchDecision(
-  action: Exclude<OrchestratorDecision['action'], 'answer_directly'>,
-  latestQuestion: string
-): OrchestratorDecision {
-  return {
-    action,
-    searchQuery: latestQuestion,
-    reason: `Forced tool: ${action}.`,
   };
 }
 

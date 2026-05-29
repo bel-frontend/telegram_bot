@@ -14,6 +14,38 @@ type UnnormalizedSearchPlan = Omit<SearchPlan, 'resultMode'> & {
   resultMode?: SearchPlan['resultMode'];
 };
 
+export const TOOL_CATALOG = [
+  {
+    tool: 'folk_wisdom_search',
+    useFor: 'Прыказкі, прымаўкі, прыслоўі, выслоўі, народная мудрасць, народныя прыкметы.',
+  },
+  {
+    tool: 'dialect_dictionary_search',
+    useFor: 'Дыялектныя словы і мясцовыя выразы, асабліва Вушацкі словазбор, гразьбы, праклёны, пагрозы.',
+    structuredInput: 'Set lookupTerm to the exact dialect word or expression when the user asks for a specific item.',
+  },
+  {
+    tool: 'orthographic_dictionary_search',
+    useFor: 'Правапіс, напісанне слова, формы слова ў арфаграфічным слоўніку.',
+    structuredInput: 'Set lookupTerm to the exact word whose spelling or form should be checked.',
+  },
+  {
+    tool: 'translation_dictionary_search',
+    useFor: 'Пераклад паміж расейскай і беларускай мовамі.',
+    structuredInput: 'Set lookupTerm to the exact source word or phrase to translate.',
+  },
+  {
+    tool: 'explanatory_dictionary_search',
+    useFor:
+      'Тлумачэнні і азначэнні беларускіх слоў. Калі карыстальнік просіць знайсці слова ў слоўніку без удакладнення, гэта звычайна lookup у тлумачальным слоўніку.',
+    structuredInput: 'Set lookupTerm to the exact word being looked up, without command words.',
+  },
+  {
+    tool: 'rag_search',
+    useFor: 'Агульны пошук па ўсёй PDF-калекцыі, калі ніводзін спецыялізаваны тул не падыходзіць.',
+  },
+] as const;
+
 export class QueryPlannerAgent {
   async plan(messages: ChatMessage[], latestQuestion: string, fallbackTool: ToolName): Promise<SearchPlan> {
     const model = await chatModel(config.chat.toolModel, {
@@ -26,13 +58,14 @@ export class QueryPlannerAgent {
       new SystemMessage(
         schemaInstruction(
           'SearchPlan',
-          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|orthographic_lookup|translation_lookup|explanatory_lookup|exact_phrase","coreQuery":"string","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"targetBook":"any|vushatski_slovazbor|proverbs_dictionary|orthographic_dictionary|translation_dictionary|explanatory_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search|orthographic_dictionary_search|translation_dictionary_search|explanatory_dictionary_search","reason":"string"}'
+          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|orthographic_lookup|translation_lookup|explanatory_lookup|exact_phrase","coreQuery":"string","lookupTerm":"exact word optional","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"targetBook":"any|vushatski_slovazbor|proverbs_dictionary|orthographic_dictionary|translation_dictionary|explanatory_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search|orthographic_dictionary_search|translation_dictionary_search|explanatory_dictionary_search","reason":"string"}'
         )
       ),
       new HumanMessage(
         JSON.stringify({
           latestQuestion,
           fallbackTool,
+          availableTools: TOOL_CATALOG,
           recentMessages: messages.slice(-8),
         })
       ),
@@ -50,6 +83,7 @@ export function fallbackPlan(query: string, tool: ToolName): SearchPlan {
   return normalizePlan({
     intent: fallbackIntent(query, tool),
     coreQuery: query,
+    lookupTerm: undefined,
     expandedQueries: [query],
     semanticFacets: fallbackSemanticFacets(query),
     resultMode,
@@ -79,9 +113,11 @@ function normalizePlan(plan: UnnormalizedSearchPlan): SearchPlan {
     .filter(Boolean)
     .slice(0, 10);
   const resultMode = plan.resultMode || fallbackResultMode(plan.coreQuery, plan.tool);
+  const lookupTerm = plan.lookupTerm?.trim();
 
   return {
     ...plan,
+    lookupTerm: lookupTerm || undefined,
     targetBook: plan.targetBook || 'any',
     resultMode,
     semanticFacets,
