@@ -74,7 +74,7 @@ bot.on("message", (msg) => {
 });
 
 const sendMessage = (chatId, text) => {
-  bot.sendMessage(chatId, text);
+  return bot.sendMessage(chatId, text);
 };
 
 function shouldDeleteMessage(messagesArray) {
