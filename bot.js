@@ -1,11 +1,33 @@
 const TelegramBot = require("node-telegram-bot-api");
 const json = require("./index.json");
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
-const bot = new TelegramBot(token, { polling: true });
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
 
-const TARGET_CHAT_IDS = process.env.TARGET_CHAT_IDS.split(","); // Add your target chat IDs in the .env file, separated by commas
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+  process.exit(1);
+});
+
+const token = process.env.TELEGRAM_BOT_TOKEN;
+if (!token) {
+  throw new Error("TELEGRAM_BOT_TOKEN environment variable is required.");
+}
+
+const TARGET_CHAT_IDS = (process.env.TARGET_CHAT_IDS || "")
+  .split(",")
+  .map((chatId) => chatId.trim())
+  .filter(Boolean); // Add your target chat IDs in the .env file, separated by commas
 const TARGET_NOTIFICATION_ID = process.env.TARGET_NOTIFICATION_ID; // Add your target notification ID in the .env file
+
+if (!TARGET_CHAT_IDS.length) {
+  throw new Error("TARGET_CHAT_IDS environment variable is required.");
+}
+
+if (!TARGET_NOTIFICATION_ID) {
+  throw new Error("TARGET_NOTIFICATION_ID environment variable is required.");
+}
 
 const SITES_TO_CHECK = [
 "https://bel-geek.com",
@@ -14,13 +36,44 @@ const SITES_TO_CHECK = [
  // Add your site URLs here
 
 const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+const POLLING_RESTART_AFTER_ERRORS = numberFromEnv(
+  "TELEGRAM_POLLING_RESTART_AFTER_ERRORS",
+  3
+);
+const POLLING_RESTART_COOLDOWN_MS =
+  numberFromEnv("TELEGRAM_POLLING_RESTART_COOLDOWN_SECONDS", 30) * 1000;
+
+const bot = new TelegramBot(token, {
+  polling: {
+    interval: 300,
+    autoStart: true,
+    params: {
+      timeout: 30,
+    },
+  },
+});
+
+let pollingErrorCount = 0;
+let lastPollingRestartAt = 0;
+let pollingRestartInFlight = false;
 
 bot.on("polling_error", (error) => {
-  console.log(error);
   console.error("Polling error:", error.code, error?.response?.body);
+
+  pollingErrorCount += 1;
+  if (pollingErrorCount >= POLLING_RESTART_AFTER_ERRORS) {
+    void restartTelegramPolling(`after ${pollingErrorCount} polling errors`);
+  }
 });
 
 bot.on("message", (msg) => {
+  pollingErrorCount = 0;
+  void handleTelegramMessage(msg).catch((error) => {
+    console.error("Telegram message handler failed:", error);
+  });
+});
+
+async function handleTelegramMessage(msg) {
   const chatId = msg.chat.id;
 
   if (TARGET_CHAT_IDS.includes(chatId.toString())) {
@@ -31,51 +84,80 @@ bot.on("message", (msg) => {
 
     // Analyze messages and decide to delete
     if (shouldDeleteMessage([text || "", caption || ""])) {
-      bot
-        .deleteMessage(chatId, msg.message_id)
-        .then(() => {
-          const randomMessage = json[Math.floor(Math.random() * json.length)];
+      try {
+        await bot.deleteMessage(chatId, msg.message_id);
+      } catch (error) {
+        console.error("Failed to delete message:", error);
+        return;
+      }
 
-          if (!randomMessage || !randomMessage.message) {
-            console.error(
-              "randomMessage is undefined or missing the 'message' property."
-            );
-            sendMessage(
-              TARGET_NOTIFICATION_ID,
-              "Error: Could not retrieve a random message from the JSON file."
-            );
-            return;
-          }
+      const randomMessage = json[Math.floor(Math.random() * json.length)];
 
-          try {
-            sendMessage(
-              TARGET_NOTIFICATION_ID,
-              `Message deleted: ${text || caption} `
-            );
-          } catch (error) {
-            console.error("Failed to send message:", error);
-          }
+      if (!randomMessage || !randomMessage.message) {
+        console.error(
+          "randomMessage is undefined or missing the 'message' property."
+        );
+        await safeSendMessage(
+          TARGET_NOTIFICATION_ID,
+          "Error: Could not retrieve a random message from the JSON file."
+        );
+        return;
+      }
 
-          sendMessage(
-            chatId,
-            `Тут было паведамленне якое не суадносіцца з нашай суполкай. Мы яго выдалілі і замест гэтага  трымайце беларускую прыказку ці прымаўку:
+      await safeSendMessage(
+        TARGET_NOTIFICATION_ID,
+        `Message deleted: ${text || caption} `
+      );
+
+      await safeSendMessage(
+        chatId,
+        `Тут было паведамленне якое не суадносіцца з нашай суполкай. Мы яго выдалілі і замест гэтага  трымайце беларускую прыказку ці прымаўку:
 
           "${randomMessage.message}"
                        `
-          ).catch((error) => {
-            console.error("Failed to send message:", error);
-          });
-        })
-        .catch((error) => {
-          console.error("Failed to delete message:", error);
-        });
+      );
     }
   }
-});
+}
 
 const sendMessage = (chatId, text) => {
   return bot.sendMessage(chatId, text);
 };
+
+async function safeSendMessage(chatId, text) {
+  try {
+    return await sendMessage(chatId, text);
+  } catch (error) {
+    console.error("Failed to send message:", error);
+    return undefined;
+  }
+}
+
+async function restartTelegramPolling(reason) {
+  const now = Date.now();
+  if (pollingRestartInFlight) return;
+  if (now - lastPollingRestartAt < POLLING_RESTART_COOLDOWN_MS) return;
+
+  pollingRestartInFlight = true;
+  lastPollingRestartAt = now;
+
+  console.warn(`Restarting Telegram polling ${reason}.`);
+  try {
+    await bot.stopPolling({ cancel: true, reason });
+    await bot.startPolling();
+    pollingErrorCount = 0;
+    console.log("Telegram polling restarted.");
+  } catch (error) {
+    console.error("Failed to restart Telegram polling:", error);
+  } finally {
+    pollingRestartInFlight = false;
+  }
+}
+
+function numberFromEnv(name, defaultValue) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : defaultValue;
+}
 
 function shouldDeleteMessage(messagesArray) {
   // Simple example of a condition to delete a message
@@ -100,14 +182,14 @@ async function checkSitesStatus() {
       const response = await fetch(site);
       if (!response.ok) {
         // If the response status is not OK (e.g., 404, 500), send a notification
-        sendMessage(
+        await safeSendMessage(
           TARGET_NOTIFICATION_ID,
           `Site check failed: ${site} returned status ${response.status}`
         );
       }
     } catch (error) {
       // If there's an error (e.g., network issue), send a notification
-      sendMessage(
+      await safeSendMessage(
         TARGET_NOTIFICATION_ID,
         `Site check failed: ${site} is offline or unreachable. Error: ${error.message}`
       );
