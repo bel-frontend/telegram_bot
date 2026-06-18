@@ -10,10 +10,15 @@ export const ChatMessageSchema = z.object({
 export const RetrievedSourceSchema = z.object({
   text: z.string(),
   score: z.number(),
+  payloadKind: z.string().optional(),
   source: z.string().optional(),
   fileName: z.string().optional(),
   category: z.string().optional(),
   dictionaryType: z.string().optional(),
+  sourceBook: z.string().optional(),
+  sectionTitle: z.string().optional(),
+  recordType: z.string().optional(),
+  tags: z.array(z.string()).optional(),
   title: z.string().optional(),
   page: z.number().optional(),
   matchedQueries: z.array(z.string()).optional(),
@@ -30,6 +35,7 @@ export const OrchestratorDecisionSchema = z.object({
     'search_orthographic_dictionary',
     'search_translation_dictionary',
     'search_explanatory_dictionary',
+    'search_records',
   ]),
   searchQuery: z.string().optional(),
   directAnswer: z.string().optional(),
@@ -44,6 +50,7 @@ export const ToolNameSchema = z.enum([
   'orthographic_dictionary_search',
   'translation_dictionary_search',
   'explanatory_dictionary_search',
+  'record_search',
 ]);
 
 export const SearchIntentSchema = z.enum([
@@ -55,6 +62,7 @@ export const SearchIntentSchema = z.enum([
   'orthographic_lookup',
   'translation_lookup',
   'explanatory_lookup',
+  'record_lookup',
   'exact_phrase',
 ]);
 
@@ -68,6 +76,9 @@ export const SearchPlanSchema = z.object({
   semanticFacets: z.array(z.string()).optional(),
   resultMode: ResultModeSchema.default('answer'),
   desiredResultCount: z.number().int().min(1).max(80).optional(),
+  recordTypes: z.array(z.string()).optional(),
+  sourceBook: z.string().optional(),
+  sectionAliases: z.array(z.string()).optional(),
   targetBook: z.enum([
     'any',
     'vushatski_slovazbor',

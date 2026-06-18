@@ -109,13 +109,20 @@ async function handleTelegramMessage(msg) {
         `Message deleted: ${text || caption} `
       );
 
-      await safeSendMessage(
+      const sentReplacement = await safeSendMessage(
         chatId,
         `Тут было паведамленне якое не суадносіцца з нашай суполкай. Мы яго выдалілі і замест гэтага  трымайце беларускую прыказку ці прымаўку:
 
           "${randomMessage.message}"
                        `
       );
+
+      if (!sentReplacement) {
+        await safeSendMessage(
+          TARGET_NOTIFICATION_ID,
+          `Failed to send replacement message to chat ${chatId}`
+        );
+      }
     }
   }
 }
@@ -128,7 +135,12 @@ async function safeSendMessage(chatId, text) {
   try {
     return await sendMessage(chatId, text);
   } catch (error) {
-    console.error("Failed to send message:", error);
+    console.error("Failed to send message:", {
+      chatId,
+      code: error.code,
+      message: error.message,
+      response: error?.response?.body,
+    });
     return undefined;
   }
 }

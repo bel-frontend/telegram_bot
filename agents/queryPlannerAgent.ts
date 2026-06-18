@@ -41,6 +41,13 @@ export const TOOL_CATALOG = [
     structuredInput: 'Set lookupTerm to the exact word being looked up, without command words.',
   },
   {
+    tool: 'record_search',
+    useFor:
+      'Катэгарыйны пошук кароткіх элементаў: вітанні, развітанні, пажаданні, праклёны, гразьбы, пагрозы, абразы, пад’ялдычкі, прыкметы.',
+    structuredInput:
+      'Use recordTypes for category lookup, e.g. greeting, farewell, wish, curse, insult, threat, proverb, weather_sign.',
+  },
+  {
     tool: 'rag_search',
     useFor: 'Агульны пошук па ўсёй PDF-калекцыі, калі ніводзін спецыялізаваны тул не падыходзіць.',
   },
@@ -58,7 +65,7 @@ export class QueryPlannerAgent {
       new SystemMessage(
         schemaInstruction(
           'SearchPlan',
-          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|orthographic_lookup|translation_lookup|explanatory_lookup|exact_phrase","coreQuery":"string","lookupTerm":"exact word optional","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"targetBook":"any|vushatski_slovazbor|proverbs_dictionary|orthographic_dictionary|translation_dictionary|explanatory_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search|orthographic_dictionary_search|translation_dictionary_search|explanatory_dictionary_search","reason":"string"}'
+          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|orthographic_lookup|translation_lookup|explanatory_lookup|record_lookup|exact_phrase","coreQuery":"string","lookupTerm":"exact word optional","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"recordTypes":["greeting|farewell|wish|curse|insult|threat|proverb|weather_sign optional"],"sourceBook":"string optional","sectionAliases":["string optional"],"targetBook":"any|vushatski_slovazbor|proverbs_dictionary|orthographic_dictionary|translation_dictionary|explanatory_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search|orthographic_dictionary_search|translation_dictionary_search|explanatory_dictionary_search|record_search","reason":"string"}'
         )
       ),
       new HumanMessage(
@@ -114,6 +121,8 @@ function normalizePlan(plan: UnnormalizedSearchPlan): SearchPlan {
     .slice(0, 10);
   const resultMode = plan.resultMode || fallbackResultMode(plan.coreQuery, plan.tool);
   const lookupTerm = plan.lookupTerm?.trim();
+  const recordTypes = [...new Set((plan.recordTypes || []).map((item) => item.trim()).filter(Boolean))].slice(0, 8);
+  const sectionAliases = [...new Set((plan.sectionAliases || []).map((item) => item.trim()).filter(Boolean))].slice(0, 10);
 
   return {
     ...plan,
@@ -121,6 +130,9 @@ function normalizePlan(plan: UnnormalizedSearchPlan): SearchPlan {
     targetBook: plan.targetBook || 'any',
     resultMode,
     semanticFacets,
+    recordTypes: recordTypes.length ? recordTypes : undefined,
+    sectionAliases: sectionAliases.length ? sectionAliases : undefined,
+    sourceBook: plan.sourceBook?.trim() || undefined,
     desiredResultCount: plan.desiredResultCount || defaultResultCount(resultMode, plan.tool),
     expandedQueries: expandedQueries.length ? expandedQueries : [plan.coreQuery],
   };
@@ -131,6 +143,7 @@ function intentForTool(tool: ToolName): SearchPlan['intent'] {
   if (tool === 'orthographic_dictionary_search') return 'orthographic_lookup';
   if (tool === 'translation_dictionary_search') return 'translation_lookup';
   if (tool === 'explanatory_dictionary_search') return 'explanatory_lookup';
+  if (tool === 'record_search') return 'record_lookup';
   if (tool === 'folk_wisdom_search') return 'folk_wisdom';
   if (tool === 'chat') return 'direct_chat';
   return 'general_rag';
@@ -141,12 +154,13 @@ function fallbackTargetBook(tool: ToolName): SearchPlan['targetBook'] {
   if (tool === 'orthographic_dictionary_search') return 'orthographic_dictionary';
   if (tool === 'translation_dictionary_search') return 'translation_dictionary';
   if (tool === 'explanatory_dictionary_search') return 'explanatory_dictionary';
+  if (tool === 'record_search') return 'vushatski_slovazbor';
   return 'any';
 }
 
 function fallbackResultMode(query: string, tool: ToolName): SearchPlan['resultMode'] {
   if (
-    tool === 'dialect_dictionary_search' &&
+    (tool === 'dialect_dictionary_search' || tool === 'record_search') &&
     /(раздзел|секцы|спіс|усе|увесь|цалкам|далей|працяг)/iu.test(query)
   ) {
     return 'section';
@@ -162,7 +176,7 @@ function fallbackResultMode(query: string, tool: ToolName): SearchPlan['resultMo
 function defaultResultCount(resultMode: SearchPlan['resultMode'], tool: ToolName): number {
   if (resultMode === 'section') return 60;
   if (resultMode === 'list' || resultMode === 'explore') {
-    return tool === 'dialect_dictionary_search' ? 40 : 30;
+    return tool === 'dialect_dictionary_search' || tool === 'record_search' ? 40 : 30;
   }
 
   return tool === 'rag_search' ? 8 : 20;

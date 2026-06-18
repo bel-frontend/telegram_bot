@@ -42,10 +42,15 @@ function toSource(payload: Payload, score: number): RetrievedSource {
   return {
     text: String(payload.text || ''),
     score,
+    payloadKind: stringValue(payload.payloadKind),
     source: stringValue(payload.source),
     fileName: stringValue(payload.fileName),
     category: stringValue(payload.category),
     dictionaryType: stringValue(payload.dictionaryType),
+    sourceBook: stringValue(payload.sourceBook),
+    sectionTitle: stringValue(payload.sectionTitle),
+    recordType: stringValue(payload.recordType),
+    tags: stringArrayValue(payload.tags),
     title: stringValue(payload.title),
     page: numberValue(pageNumber),
   };
@@ -57,4 +62,10 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const strings = value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+  return strings.length > 0 ? strings : undefined;
 }

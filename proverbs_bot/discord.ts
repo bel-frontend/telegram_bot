@@ -13,6 +13,7 @@ import { LexicalRetriever } from "../rag/lexicalRetriever";
 import { HybridRetriever } from "../rag/hybridRetriever";
 import { FolkWisdomSearchTool } from "../agents/folkWisdomSearchTool";
 import { RagSearchTool } from "../agents/ragSearchTool";
+import { RecordSearchTool } from "../agents/recordSearchTool";
 import { DialectDictionarySearchTool } from "../agents/dialectDictionarySearchTool";
 import {
   createExplanatoryDictionarySearchTool,
@@ -53,6 +54,7 @@ const translationDictionarySearchTool = createTranslationDictionarySearchTool(
 const explanatoryDictionarySearchTool = createExplanatoryDictionarySearchTool(
   hybridRetriever,
 );
+const recordSearchTool = new RecordSearchTool(qdrant, hybridRetriever);
 const orchestrator = new ChatOrchestratorAgent(
   folkWisdomTool,
   ragSearchTool,
@@ -60,6 +62,7 @@ const orchestrator = new ChatOrchestratorAgent(
   orthographicDictionarySearchTool,
   translationDictionarySearchTool,
   explanatoryDictionarySearchTool,
+  recordSearchTool,
 );
 const conversations = new Map<string, ChatMessage[]>();
 const debugConversations = new Set<string>();

@@ -24,6 +24,7 @@ interface PdfDocument {
   filePath: string;
   fileName: string;
   relativePath: string;
+  sourceBook: string;
   category: string;
   dictionaryType: string;
   title: string;
@@ -37,8 +38,23 @@ interface TextChunk {
   text: string;
   pageNumber: number;
   chunkIndex: number;
+  sectionTitle?: string;
   document: PdfDocument;
 }
+
+interface TextRecord {
+  text: string;
+  pageNumber: number;
+  recordIndex: number;
+  sectionTitle?: string;
+  recordType: string;
+  tags: string[];
+  document: PdfDocument;
+}
+
+type IndexItem =
+  | { kind: 'chunk'; chunk: TextChunk }
+  | { kind: 'record'; record: TextRecord };
 
 interface IndexedManifest {
   version: number;
@@ -99,6 +115,7 @@ async function main(): Promise<void> {
   }
 
   const chunks: TextChunk[] = [];
+  const records: TextRecord[] = [];
   const preparedDocuments: PreparedDocument[] = [];
   let skippedCount = 0;
 
@@ -126,6 +143,7 @@ async function main(): Promise<void> {
           text: chunkText,
           pageNumber,
           chunkIndex,
+          sectionTitle: sectionTitleForPage(document, pageNumber),
           document,
         }))
       );
@@ -146,26 +164,34 @@ async function main(): Promise<void> {
             text: chunkText,
             pageNumber,
             chunkIndex,
+            sectionTitle: sectionTitleForPage(document, pageNumber),
             document,
           }))
         );
       }
     }
 
+    const documentRecords = extractRecordsFromChunks(documentChunks);
     chunks.push(...documentChunks);
+    records.push(...documentRecords);
     preparedDocuments.push({ document, pageCount: pagesToRead, chunks: documentChunks });
   }
 
   if (skippedCount > 0) {
     console.log(`[index-pdf] Skipped ${skippedCount} unchanged PDF files. Use --force to reindex.`);
   }
-  console.log(`[index-pdf] Prepared ${chunks.length} text chunks.`);
+  console.log(`[index-pdf] Prepared ${chunks.length} text chunks and ${records.length} records.`);
   if (dryRun) {
-    printDryRunSummary(chunks, preparedDocuments);
+    printDryRunSummary(chunks, records, preparedDocuments);
     return;
   }
 
-  if (chunks.length === 0) {
+  const indexItems: IndexItem[] = [
+    ...chunks.map((chunk): IndexItem => ({ kind: 'chunk', chunk })),
+    ...records.map((record): IndexItem => ({ kind: 'record', record })),
+  ];
+
+  if (indexItems.length === 0) {
     console.log('[index-pdf] Nothing to index.');
     return;
   }
@@ -181,13 +207,13 @@ async function main(): Promise<void> {
     });
   }
 
-  for (let index = 0; index < chunks.length; index += EMBEDDING_BATCH_SIZE) {
-    const batch = chunks.slice(index, index + EMBEDDING_BATCH_SIZE);
-    const vectors = await embeddings.embedDocuments(batch.map((chunk) => chunk.text));
-    const points = batch.map((chunk, batchIndex): QdrantPoint => ({
-      id: stablePointId(chunk),
+  for (let index = 0; index < indexItems.length; index += EMBEDDING_BATCH_SIZE) {
+    const batch = indexItems.slice(index, index + EMBEDDING_BATCH_SIZE);
+    const vectors = await embeddings.embedDocuments(batch.map(indexItemText));
+    const points = batch.map((item, batchIndex): QdrantPoint => ({
+      id: stablePointId(item),
       vector: vectors[batchIndex],
-      payload: payloadForChunk(chunk),
+      payload: payloadForIndexItem(item),
     }));
 
     for (let pointIndex = 0; pointIndex < points.length; pointIndex += UPSERT_BATCH_SIZE) {
@@ -198,7 +224,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      `[index-pdf] Indexed ${Math.min(index + batch.length, chunks.length)} / ${chunks.length} chunks.`
+      `[index-pdf] Indexed ${Math.min(index + batch.length, indexItems.length)} / ${indexItems.length} items.`
     );
   }
 
@@ -255,6 +281,7 @@ async function documentMetadata(root: string, filePath: string): Promise<PdfDocu
   const [folder = 'general'] = relativePath.split(path.sep);
   const fileName = path.basename(filePath);
   const normalizedFileName = normalizeForMatch(fileName);
+  const sourceBook = sourceBookForDocument(folder, normalizedFileName);
   const dictionaryType =
     folder === 'vocabulary'
       ? 'orthographic'
@@ -272,6 +299,7 @@ async function documentMetadata(root: string, filePath: string): Promise<PdfDocu
     filePath,
     fileName,
     relativePath,
+    sourceBook,
     category: folder,
     dictionaryType,
     title: fileName.replace(/\.pdf$/i, ''),
@@ -281,6 +309,17 @@ async function documentMetadata(root: string, filePath: string): Promise<PdfDocu
     extractorVersion:
       dictionaryType === 'explanatory' ? COLUMN_EXTRACTOR_VERSION : DEFAULT_EXTRACTOR_VERSION,
   };
+}
+
+function sourceBookForDocument(folder: string, normalizedFileName: string): string {
+  if (normalizedFileName.includes('vusacki') || normalizedFileName.includes('baradulin')) {
+    return 'vushatski_slovazbor';
+  }
+  if (folder === 'proverbs') return 'proverbs_dictionary';
+  if (folder === 'vocabulary') return 'orthographic_dictionary';
+  if (folder === 'translate') return 'translation_dictionary';
+  if (folder === 'tlumach') return 'explanatory_dictionary';
+  return 'unknown';
 }
 
 async function fileSha256(filePath: string): Promise<string> {
@@ -524,6 +563,9 @@ async function readCachedPageText(
   const cached = await readTextIfExists(cachePath);
   if (cached !== null) return cached;
 
+  const legacyCached = await readLegacyCachedPageText(document, pageNumber, mode);
+  if (legacyCached !== null) return legacyCached;
+
   const text =
     mode === 'text'
       ? await extractPageText(document, pageNumber)
@@ -531,6 +573,24 @@ async function readCachedPageText(
   await mkdir(path.dirname(cachePath), { recursive: true });
   await writeFile(cachePath, text);
   return text;
+}
+
+async function readLegacyCachedPageText(
+  document: PdfDocument,
+  pageNumber: number,
+  mode: 'text' | 'ocr'
+): Promise<string | null> {
+  const candidates =
+    mode === 'ocr'
+      ? [`ocr-${pageNumber}.txt`]
+      : [`text-${pageNumber}.txt`, `text-raw-v2-${pageNumber}.txt`];
+
+  for (const candidate of candidates) {
+    const cached = await readTextIfExists(path.join(TEXT_CACHE_ROOT, document.cacheKey, candidate));
+    if (cached !== null) return cached;
+  }
+
+  return null;
 }
 
 async function readTextIfExists(filePath: string): Promise<string | null> {
@@ -610,13 +670,208 @@ function normalizeExtractedText(text: string): string {
     .trim();
 }
 
+function extractRecordsFromChunks(chunks: TextChunk[]): TextRecord[] {
+  const records: TextRecord[] = [];
+
+  for (const chunk of chunks) {
+    for (const candidate of splitChunkIntoRecordCandidates(chunk.text)) {
+      const recordType = classifyRecord(candidate, chunk);
+      if (!recordType) continue;
+
+      records.push({
+        text: candidate,
+        pageNumber: chunk.pageNumber,
+        recordIndex: records.length,
+        sectionTitle: chunk.sectionTitle,
+        recordType,
+        tags: tagsForRecord(recordType, chunk.sectionTitle),
+        document: chunk.document,
+      });
+    }
+  }
+
+  return deduplicateRecords(records);
+}
+
+function splitChunkIntoRecordCandidates(text: string): string[] {
+  const candidates: string[] = [];
+  let buffer = '';
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || isNonRecordLine(line)) {
+      if (buffer) {
+        candidates.push(buffer.trim());
+        buffer = '';
+      }
+      continue;
+    }
+
+    const cleaned = cleanRecordLine(line);
+    if (!cleaned) continue;
+
+    if (!buffer) {
+      buffer = cleaned;
+      continue;
+    }
+
+    if (continuesPreviousLine(buffer, cleaned)) {
+      buffer = `${buffer.replace(/-$/, '')}${buffer.endsWith('-') ? '' : ' '}${cleaned}`;
+      continue;
+    }
+
+    candidates.push(buffer.trim());
+    buffer = cleaned;
+  }
+
+  if (buffer) candidates.push(buffer.trim());
+
+  return candidates
+    .map((candidate) => candidate.replace(/\s+/g, ' ').trim())
+    .filter((candidate) => candidate.length >= 4 && candidate.length <= 420);
+}
+
+function isNonRecordLine(line: string): boolean {
+  return (
+    /^---\s*PAGE\s+\d+\s*---$/i.test(line) ||
+    /^\d{1,4}$/.test(line) ||
+    /^\([^)]{1,80}\)[.!?]?$/.test(line) ||
+    /^[*жx\s.·-]{2,}$/iu.test(line) ||
+    /^запісана ад\b/iu.test(line) ||
+    /^занатавана\b/iu.test(line)
+  );
+}
+
+function cleanRecordLine(line: string): string {
+  return line
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[•*—-]\s*/, '')
+    .trim();
+}
+
+function continuesPreviousLine(previous: string, current: string): boolean {
+  if (previous.endsWith('-')) return true;
+  if (/[,:;—-]$/.test(previous)) return true;
+  if (/^[а-яёіўўa-z]/iu.test(current) && !/[.!?)»]$/.test(previous)) return true;
+  return false;
+}
+
+function classifyRecord(text: string, chunk: TextChunk): string | undefined {
+  const normalizedText = normalizeRecordText(text);
+  const normalizedSection = normalizeRecordText(chunk.sectionTitle || '');
+  const sourceBook = chunk.document.sourceBook;
+
+  if (sourceBook === 'vushatski_slovazbor') {
+    if (!chunk.sectionTitle) return undefined;
+
+    if (normalizedSection.includes('прыкмет')) return 'weather_sign';
+    if (normalizedSection.includes('праклен') || normalizedSection.includes('грозьб')) return 'curse';
+    if (normalizedSection.includes('пад ялдыч') || normalizedSection.includes('цвяліл')) return 'insult';
+    if (normalizedSection.includes('добрыя пажадан')) return 'wish';
+    if (normalizedSection.includes('прыказк') || normalizedSection.includes('прымаўк')) return 'proverb';
+
+    if (matchesAny(normalizedText, ['праклен', 'грозьб', 'гразьб', 'пагроз', 'кляцьб'])) {
+      return 'curse';
+    }
+    if (matchesAny(normalizedText, ['пад ялдыч', 'цвяліл', 'абраз', 'лаянк', 'зняваг'])) {
+      return 'insult';
+    }
+    if (matchesAny(normalizedText, ['дай бог', 'каб бог', 'будзь здар', 'хай жа бог', 'добра вам жыць'])) {
+      return 'wish';
+    }
+    if (matchesAny(normalizedText, ['пачуемся', 'развітан', 'бывай', 'з богам дамоў', 'адыходзячы з гасцей'])) {
+      return 'farewell';
+    }
+    if (matchesAny(normalizedText, ['добры дзень', 'добры вечар', 'госць у хату', 'заходзьце', 'дабрыдзень', 'прывет'])) {
+      return 'greeting';
+    }
+    if (matchesAny(normalizedText, ['прыкмет', 'жыццевыя назіран', 'калі ', 'як ', 'на ', 'дождж', 'мароз', 'вецер'])) {
+      if ((chunk.sectionTitle || '').toLowerCase().includes('прыкмет')) return 'weather_sign';
+    }
+  }
+
+  if (chunk.document.dictionaryType === 'proverbs' || /прыказк|прымаўк/iu.test(chunk.sectionTitle || '')) {
+    return 'proverb';
+  }
+
+  return undefined;
+}
+
+function matchesAny(value: string, needles: string[]): boolean {
+  return needles.some((needle) => value.includes(normalizeRecordText(needle)));
+}
+
+function tagsForRecord(recordType: string, sectionTitle?: string): string[] {
+  const base = RECORD_TYPE_TAGS[recordType] || [];
+  return [...new Set([...base, ...(sectionTitle ? [sectionTitle] : [])])];
+}
+
+const RECORD_TYPE_TAGS: Record<string, string[]> = {
+  greeting: ['вітанне', 'вітанні', 'прывітанне', 'здароўканне'],
+  farewell: ['развітанне', 'бывай', 'пачуемся'],
+  wish: ['пажаданне', 'зычэнне', 'добрыя пажаданні'],
+  curse: ['праклён', 'праклёны', 'праклены', 'гразьбы', 'грозьбы', 'пагрозы'],
+  insult: ['абраза', 'абразы', 'лаянка', 'знявага', 'цвялілкі'],
+  threat: ['пагроза', 'пагрозы', 'грозьбы'],
+  proverb: ['прыказка', 'прыказкі', 'прымаўка', 'прымаўкі'],
+  weather_sign: ['прыкмета', 'прыкметы', 'надвор\'е', 'дождж', 'мароз', 'вецер'],
+};
+
+function deduplicateRecords(records: TextRecord[]): TextRecord[] {
+  const byKey = new Map<string, TextRecord>();
+  for (const record of records) {
+    const key = `${record.document.relativePath}:${record.recordType}:${normalizeRecordText(record.text)}`;
+    if (!byKey.has(key)) byKey.set(key, record);
+  }
+
+  return [...byKey.values()].map((record, index) => ({ ...record, recordIndex: index }));
+}
+
+function sectionTitleForPage(document: PdfDocument, pageNumber: number): string | undefined {
+  if (document.sourceBook !== 'vushatski_slovazbor') {
+    if (document.dictionaryType === 'proverbs') return 'Прыказкі і прымаўкі';
+    return undefined;
+  }
+
+  const printedPage = pageNumber - 2;
+  if (printedPage >= 192 && printedPage <= 220) return 'Устойлівыя выразы';
+  if (printedPage >= 221 && printedPage <= 227) return 'Параўнанні';
+  if (printedPage >= 228 && printedPage <= 258) return 'Прыказкі й прымаўкі';
+  if (printedPage >= 259 && printedPage <= 265) return 'Народны каляндар';
+  if (printedPage >= 266 && printedPage <= 275) return 'Прыкметы, жыццёвыя назіранні, парады';
+  if (printedPage >= 276 && printedPage <= 277) return 'Прыгаворкі й зычэнні';
+  if (printedPage >= 278 && printedPage <= 290) return 'Звычай, госці, зычэнні і развітанні';
+  if (printedPage >= 291 && printedPage <= 293) return 'Пытанні й воклічы';
+  if (printedPage >= 294 && printedPage <= 295) return 'Праклёны й грозьбы';
+  if (printedPage >= 296 && printedPage <= 297) return 'Пад’ялдычкі ды цвялілкі';
+  if (printedPage >= 298 && printedPage <= 299) return 'Добрыя пажаданні';
+  return undefined;
+}
+
+function normalizeRecordText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[ё]/g, 'е')
+    .replace(/[ў]/g, 'у')
+    .replace(/[^\p{L}\p{N}\s'’]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function payloadForIndexItem(item: IndexItem): Record<string, unknown> {
+  return item.kind === 'chunk' ? payloadForChunk(item.chunk) : payloadForRecord(item.record);
+}
+
 function payloadForChunk(chunk: TextChunk): Record<string, unknown> {
   return {
+    payloadKind: 'chunk',
     text: chunk.text,
     source: chunk.document.relativePath,
     fileName: chunk.document.fileName,
+    sourceBook: chunk.document.sourceBook,
     category: chunk.document.category,
     dictionaryType: chunk.document.dictionaryType,
+    sectionTitle: chunk.sectionTitle,
     title: chunk.document.title,
     pdfSha256: chunk.document.sha256,
     extractionMode: chunk.document.extractionMode,
@@ -628,13 +883,44 @@ function payloadForChunk(chunk: TextChunk): Record<string, unknown> {
   };
 }
 
-function stablePointId(chunk: TextChunk): string {
+function payloadForRecord(record: TextRecord): Record<string, unknown> {
+  return {
+    payloadKind: 'record',
+    text: record.text,
+    recordText: record.text,
+    normalizedText: normalizeRecordText(record.text),
+    recordType: record.recordType,
+    tags: record.tags,
+    source: record.document.relativePath,
+    fileName: record.document.fileName,
+    sourceBook: record.document.sourceBook,
+    category: record.document.category,
+    dictionaryType: record.document.dictionaryType,
+    sectionTitle: record.sectionTitle,
+    title: record.document.title,
+    pdfSha256: record.document.sha256,
+    recordIndex: record.recordIndex,
+    loc: {
+      pageNumber: record.pageNumber,
+    },
+  };
+}
+
+function stablePointId(item: IndexItem): string {
+  const identity =
+    item.kind === 'chunk'
+      ? `${item.chunk.document.relativePath}:chunk:${item.chunk.pageNumber}:${item.chunk.chunkIndex}:${item.chunk.text}`
+      : `${item.record.document.relativePath}:record:${item.record.pageNumber}:${item.record.recordIndex}:${item.record.text}`;
   const hash = createHash('sha256')
-    .update(`${chunk.document.relativePath}:${chunk.pageNumber}:${chunk.chunkIndex}:${chunk.text}`)
+    .update(identity)
     .digest('hex')
     .slice(0, 32);
 
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
+}
+
+function indexItemText(item: IndexItem): string {
+  return item.kind === 'chunk' ? item.chunk.text : item.record.text;
 }
 
 function normalizeForMatch(value: string): string {
@@ -644,15 +930,22 @@ function normalizeForMatch(value: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function printDryRunSummary(chunks: TextChunk[], preparedDocuments: PreparedDocument[]): void {
+function printDryRunSummary(chunks: TextChunk[], records: TextRecord[], preparedDocuments: PreparedDocument[]): void {
   const byType = new Map<string, number>();
   for (const chunk of chunks) {
     byType.set(chunk.document.dictionaryType, (byType.get(chunk.document.dictionaryType) || 0) + 1);
+  }
+  const recordsByType = new Map<string, number>();
+  for (const record of records) {
+    recordsByType.set(record.recordType, (recordsByType.get(record.recordType) || 0) + 1);
   }
 
   console.log('[index-pdf] Dry run summary:');
   for (const [type, count] of [...byType.entries()].sort()) {
     console.log(`  ${type}: ${count} chunks`);
+  }
+  for (const [type, count] of [...recordsByType.entries()].sort()) {
+    console.log(`  record:${type}: ${count}`);
   }
   if (preparedDocuments.length > 0) {
     console.log('[index-pdf] Files to index:');

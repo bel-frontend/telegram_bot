@@ -10,6 +10,7 @@ import { QueryPlannerAgent, TOOL_CATALOG } from './queryPlannerAgent';
 import { QuestionRewriterAgent } from './questionRewriterAgent';
 import { RagResultEvaluator } from './ragResultEvaluator';
 import type { RagSearchTool } from './ragSearchTool';
+import type { RecordSearchTool } from './recordSearchTool';
 import {
   FinalAnswerSchema,
   OrchestratorDecisionSchema,
@@ -40,6 +41,7 @@ export class ChatOrchestratorAgent {
     private readonly orthographicDictionarySearchTool: FilteredDictionarySearchTool,
     private readonly translationDictionarySearchTool: FilteredDictionarySearchTool,
     private readonly explanatoryDictionarySearchTool: FilteredDictionarySearchTool,
+    private readonly recordSearchTool: RecordSearchTool,
     private readonly queryPlannerAgent = new QueryPlannerAgent(),
     private readonly questionRewriterAgent = new QuestionRewriterAgent()
   ) {}
@@ -216,6 +218,10 @@ export class ChatOrchestratorAgent {
       return this.explanatoryDictionarySearchTool.invokePlan(plan);
     }
 
+    if (plan.tool === 'record_search') {
+      return this.recordSearchTool.invokePlan(plan);
+    }
+
     return this.folkWisdomSearchTool.invokePlan(plan);
   }
 
@@ -223,6 +229,9 @@ export class ChatOrchestratorAgent {
     messages: ChatMessage[],
     latestQuestion: string
   ): Promise<OrchestratorDecision> {
+    const recordDecision = recordSearchDecision(latestQuestion);
+    if (recordDecision) return recordDecision;
+
     const model = await chatModel(config.chat.toolModel, {
       ollamaUrl: config.chat.ollamaUrl,
       reasoningEffort: config.chat.toolReasoningEffort,
@@ -290,6 +299,11 @@ export class ChatOrchestratorAgent {
               fileName: source.fileName,
               category: source.category,
               dictionaryType: source.dictionaryType,
+              payloadKind: source.payloadKind,
+              sourceBook: source.sourceBook,
+              sectionTitle: source.sectionTitle,
+              recordType: source.recordType,
+              tags: source.tags,
               title: source.title,
               page: source.page,
               score: source.score,
@@ -344,6 +358,7 @@ function isForcedSearchDecision(decision: OrchestratorDecision): boolean {
 }
 
 function toolForDecision(decision: OrchestratorDecision): ToolName {
+  if (decision.action === 'search_records') return 'record_search';
   if (decision.action === 'search_dialect_dictionary') return 'dialect_dictionary_search';
   if (decision.action === 'search_orthographic_dictionary') return 'orthographic_dictionary_search';
   if (decision.action === 'search_translation_dictionary') return 'translation_dictionary_search';
@@ -351,6 +366,26 @@ function toolForDecision(decision: OrchestratorDecision): ToolName {
   if (decision.action === 'search_rag') return 'rag_search';
   if (decision.action === 'search_folk_wisdom') return 'folk_wisdom_search';
   return 'chat';
+}
+
+function recordSearchDecision(question: string): OrchestratorDecision | undefined {
+  const normalized = question
+    .toLowerCase()
+    .replace(/[ё]/g, 'е')
+    .replace(/[ў]/g, 'у');
+  const asksForList = /(дай|пакажы|знайдзі|пашукай|падбяры|якія|спіс|усе|некалькі)/iu.test(normalized);
+  const categoryQuery =
+    /(вітан|прывітан|здароўкан|развітан|пажадан|зычэн|праклен|праклён|гразьб|грозьб|пагроз|абраз|лаянк|зняваг|цвяліл|пад.?ялдыч|прыкмет)/iu.test(normalized);
+
+  if (!categoryQuery) return undefined;
+
+  return {
+    action: 'search_records',
+    searchQuery: question,
+    reason: asksForList
+      ? 'Forced tool: category list/extract query should use record search.'
+      : 'Forced tool: category query should use record search for recall.',
+  };
 }
 
 interface SearchRerankResult {

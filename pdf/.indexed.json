@@ -4,13 +4,15 @@
     "proverbs/Vusacki_slovazbor_Ryhora_Baradulina_2013.pdf": {
       "sha256": "8ddb92e59a871863dae3b7a8953768ddc3e5fca0b07d1ed049d77764bd358c76",
       "pages": 390,
-      "chunks": 456,
+      "chunks": 451,
       "category": "proverbs",
       "dictionaryType": "dialect",
       "qdrantCollection": "lesson11_pdf_documents",
       "embeddingModel": "text-embedding-3-large",
       "embeddingDimensions": 3072,
-      "indexedAt": "2026-05-29T09:08:25.671Z"
+      "extractionMode": "layout",
+      "extractorVersion": 1,
+      "indexedAt": "2026-06-18T17:17:52.349Z"
     },
     "proverbs/слоўнік_прыказак.pdf": {
       "sha256": "31057545988b3348193f5a088ff803a0b38612c54d3faf7ba16aac178759659e",
@@ -21,7 +23,9 @@
       "qdrantCollection": "lesson11_pdf_documents",
       "embeddingModel": "text-embedding-3-large",
       "embeddingDimensions": 3072,
-      "indexedAt": "2026-05-29T09:08:26.505Z"
+      "extractionMode": "layout",
+      "extractorVersion": 1,
+      "indexedAt": "2026-06-18T17:09:09.754Z"
     },
     "tlumach/Суднiк, Крыўко - Тлумачальны слоўнiк беларускай лiтаратурнай мовы - 2002.pdf": {
       "sha256": "12e8c02e64c3591261bcfd6826161f7d0bf4ba0412e640856d0bf162fbccee73",
@@ -34,29 +38,33 @@
       "embeddingDimensions": 3072,
       "extractionMode": "columns",
       "extractorVersion": 5,
-      "indexedAt": "2026-05-29T10:08:22.780Z"
+      "indexedAt": "2026-06-18T17:09:09.754Z"
     },
     "translate/Kaśpiarovič. Viciebski krajovy słoŭnik (2011).pdf": {
       "sha256": "46981aa9a813b415843ff73ff40146635c031a1ecafa23aaff42fe50faf4dd18",
       "pages": 394,
-      "chunks": 1145,
+      "chunks": 1142,
       "category": "translate",
       "dictionaryType": "translation",
       "qdrantCollection": "lesson11_pdf_documents",
       "embeddingModel": "text-embedding-3-large",
       "embeddingDimensions": 3072,
-      "indexedAt": "2026-05-29T09:08:31.166Z"
+      "extractionMode": "layout",
+      "extractorVersion": 1,
+      "indexedAt": "2026-06-18T17:09:09.754Z"
     },
     "vocabulary/arfahraficny-slounik-1990-loban-sudnik.pdf": {
       "sha256": "4a8b05287d9ba2533dad32fcfde12eedf596b78e9d9f996d9f372666a89d4da7",
       "pages": 259,
-      "chunks": 490,
+      "chunks": 488,
       "category": "vocabulary",
       "dictionaryType": "orthographic",
       "qdrantCollection": "lesson11_pdf_documents",
       "embeddingModel": "text-embedding-3-large",
       "embeddingDimensions": 3072,
-      "indexedAt": "2026-05-29T09:08:31.465Z"
+      "extractionMode": "layout",
+      "extractorVersion": 1,
+      "indexedAt": "2026-06-18T17:09:09.754Z"
     }
   }
 }
