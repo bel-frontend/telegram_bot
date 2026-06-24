@@ -433,24 +433,17 @@ function buildSourceCitations(
   sources: RerankedSource[],
   modelCitations: string[]
 ): string[] {
-  const sourceCitations = sources
-    .slice(0, 6)
-    .map(sourceCitation)
-    .filter((citation): citation is string => Boolean(citation));
-  const all = [...sourceCitations, ...modelCitations.map((item) => item.trim()).filter(Boolean)];
+  const bestSourceCitation = sourceCitation(sources[0]);
+  if (bestSourceCitation) return [bestSourceCitation];
 
-  return [...new Set(all)].slice(0, 6);
+  const bestModelCitation = modelCitations.find((item) => item.trim().length > 0)?.trim();
+  return bestModelCitation ? [bestModelCitation] : [];
 }
 
-function sourceCitation(source: RerankedSource): string | undefined {
+function sourceCitation(source?: RerankedSource): string | undefined {
+  if (!source) return undefined;
   const name = source.title || source.fileName || source.source;
   if (!name) return undefined;
 
-  const details = [
-    source.page ? `стар. ${source.page}` : undefined,
-    source.sectionTitle,
-    source.recordType ? `record: ${source.recordType}` : undefined,
-  ].filter(Boolean);
-
-  return details.length > 0 ? `${name} (${details.join(', ')})` : name;
+  return source.page ? `${name}, стар. ${source.page}` : name;
 }
