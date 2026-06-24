@@ -118,9 +118,10 @@ export class ChatOrchestratorAgent {
       bestEvaluation,
       enforcedPlan
     );
+    const citations = buildSourceCitations(sourcesForAnswer, finalAnswer.citations);
 
     return {
-      answer: finalAnswer.answer,
+      answer: appendSourcesToAnswer(finalAnswer.answer, citations),
       usedRag: true,
       searchQuery,
       sources: sourcesForAnswer,
@@ -129,7 +130,7 @@ export class ChatOrchestratorAgent {
         usedTool,
         searchPlan: enforcedPlan,
         queryBreakdown: bestOutput.queryBreakdown,
-        citations: finalAnswer.citations,
+        citations,
         evaluationResult: bestEvaluation,
         rerank: rerankTrace,
         ...(wasRewritten ? { standaloneQuestion } : {}),
@@ -414,4 +415,42 @@ function toLangChainMessage(message: ChatMessage): HumanMessage | AIMessage {
   return message.role === 'user'
     ? new HumanMessage(message.content)
     : new AIMessage(message.content);
+}
+
+function appendSourcesToAnswer(answer: string, citations: string[]): string {
+  if (citations.length === 0) return answer;
+  if (/\n\s*(крыніцы|sources)\s*:/iu.test(answer)) return answer;
+
+  return [
+    answer.trim(),
+    '',
+    'Крыніцы:',
+    ...citations.map((citation, index) => `${index + 1}. ${citation}`),
+  ].join('\n');
+}
+
+function buildSourceCitations(
+  sources: RerankedSource[],
+  modelCitations: string[]
+): string[] {
+  const sourceCitations = sources
+    .slice(0, 6)
+    .map(sourceCitation)
+    .filter((citation): citation is string => Boolean(citation));
+  const all = [...sourceCitations, ...modelCitations.map((item) => item.trim()).filter(Boolean)];
+
+  return [...new Set(all)].slice(0, 6);
+}
+
+function sourceCitation(source: RerankedSource): string | undefined {
+  const name = source.title || source.fileName || source.source;
+  if (!name) return undefined;
+
+  const details = [
+    source.page ? `стар. ${source.page}` : undefined,
+    source.sectionTitle,
+    source.recordType ? `record: ${source.recordType}` : undefined,
+  ].filter(Boolean);
+
+  return details.length > 0 ? `${name} (${details.join(', ')})` : name;
 }
