@@ -45,13 +45,13 @@
       "pages": 394,
       "chunks": 1142,
       "category": "translate",
-      "dictionaryType": "translation",
+      "dictionaryType": "dialect",
       "qdrantCollection": "lesson11_pdf_documents",
       "embeddingModel": "text-embedding-3-large",
       "embeddingDimensions": 3072,
-      "extractionMode": "layout",
-      "extractorVersion": 1,
-      "indexedAt": "2026-06-18T17:09:09.754Z"
+      "extractionMode": "ocr",
+      "extractorVersion": 2,
+      "indexedAt": "2026-06-24T17:33:32.871Z"
     },
     "vocabulary/arfahraficny-slounik-1990-loban-sudnik.pdf": {
       "sha256": "4a8b05287d9ba2533dad32fcfde12eedf596b78e9d9f996d9f372666a89d4da7",
@@ -65,6 +65,58 @@
       "extractionMode": "layout",
       "extractorVersion": 1,
       "indexedAt": "2026-06-18T17:09:09.754Z"
+    },
+    "proverbs/маскоўска-крывіцкі_перакладчык_прыказак.pdf": {
+      "sha256": "6978c79edf07e20635412b398b213654549d2e40cb5794c168edd508476f8baa",
+      "pages": 80,
+      "chunks": 187,
+      "category": "proverbs",
+      "dictionaryType": "proverbs",
+      "qdrantCollection": "lesson11_pdf_documents",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimensions": 3072,
+      "extractionMode": "ocr",
+      "extractorVersion": 2,
+      "indexedAt": "2026-06-24T15:12:33.736Z"
+    },
+    "vocabulary/Słoŭnik biełaruskich havorak paŭnočna-zachodniaj Biełarusi i jaje pahraničča (tom 1).pdf": {
+      "sha256": "ef674d6739696c23f39d7bd149aed292f36da3f1de0eee64f08932812efa6e4a",
+      "pages": 513,
+      "chunks": 1538,
+      "category": "vocabulary",
+      "dictionaryType": "dialect",
+      "qdrantCollection": "lesson11_pdf_documents",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimensions": 3072,
+      "extractionMode": "ocr",
+      "extractorVersion": 2,
+      "indexedAt": "2026-06-24T16:30:21.828Z"
+    },
+    "vocabulary/Słoŭnik biełaruskich havorak paŭnočna-zachodniaj Biełarusi i jaje pahraničča (tom 2).pdf": {
+      "sha256": "867b4e4aba4483aa7e1012bfd4d144b5065c9f95f3fc3b36fb5fb9c14b781547",
+      "pages": 729,
+      "chunks": 2204,
+      "category": "vocabulary",
+      "dictionaryType": "dialect",
+      "qdrantCollection": "lesson11_pdf_documents",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimensions": 3072,
+      "extractionMode": "ocr",
+      "extractorVersion": 2,
+      "indexedAt": "2026-06-24T17:07:31.759Z"
+    },
+    "vocabulary/Słoŭnik biełaruskich havorak paŭnočna-zachodniaj Biełarusi i jaje pahraničča (tom 3).pdf": {
+      "sha256": "b3151da23e69c0d719d11e87c54256a01073e976172c81f7372a34bc028a7291",
+      "pages": 537,
+      "chunks": 1598,
+      "category": "vocabulary",
+      "dictionaryType": "dialect",
+      "qdrantCollection": "lesson11_pdf_documents",
+      "embeddingModel": "text-embedding-3-large",
+      "embeddingDimensions": 3072,
+      "extractionMode": "ocr",
+      "extractorVersion": 2,
+      "indexedAt": "2026-06-24T17:31:58.718Z"
     }
   }
 }

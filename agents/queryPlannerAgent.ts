@@ -45,7 +45,7 @@ export const TOOL_CATALOG = [
     useFor:
       'Катэгарыйны пошук кароткіх элементаў: вітанні, развітанні, пажаданні, праклёны, гразьбы, пагрозы, абразы, пад’ялдычкі, прыкметы.',
     structuredInput:
-      'Use recordTypes for category lookup, e.g. greeting, farewell, wish, curse, insult, threat, proverb, weather_sign.',
+      'Use recordTypes for category lookup, e.g. greeting, farewell, wish, curse, insult, threat, proverb, weather_sign, phrase_equivalent.',
   },
   {
     tool: 'rag_search',
@@ -65,7 +65,7 @@ export class QueryPlannerAgent {
       new SystemMessage(
         schemaInstruction(
           'SearchPlan',
-          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|orthographic_lookup|translation_lookup|explanatory_lookup|record_lookup|exact_phrase","coreQuery":"string","lookupTerm":"exact word optional","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"recordTypes":["greeting|farewell|wish|curse|insult|threat|proverb|weather_sign optional"],"sourceBook":"string optional","sectionAliases":["string optional"],"targetBook":"any|vushatski_slovazbor|proverbs_dictionary|orthographic_dictionary|translation_dictionary|explanatory_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search|orthographic_dictionary_search|translation_dictionary_search|explanatory_dictionary_search|record_search","reason":"string"}'
+          '{"intent":"direct_chat|general_rag|folk_wisdom|dialect_definition|dialect_section_lookup|orthographic_lookup|translation_lookup|explanatory_lookup|record_lookup|exact_phrase","coreQuery":"string","lookupTerm":"exact word optional","expandedQueries":["string"],"semanticFacets":["string optional"],"resultMode":"answer|list|section|explore","desiredResultCount":number,"recordTypes":["greeting|farewell|wish|curse|insult|threat|proverb|weather_sign|phrase_equivalent optional"],"sourceBook":"string optional","sectionAliases":["string optional"],"targetBook":"any|vushatski_slovazbor|proverbs_dictionary|orthographic_dictionary|translation_dictionary|explanatory_dictionary","tool":"chat|rag_search|folk_wisdom_search|dialect_dictionary_search|orthographic_dictionary_search|translation_dictionary_search|explanatory_dictionary_search|record_search","reason":"string"}'
         )
       ),
       new HumanMessage(

@@ -15,6 +15,7 @@ const RECORD_TYPE_TRIGGERS: Record<string, string[]> = {
   threat: ['пагроза', 'пагрозы', 'грозьбы', 'гразьбы'],
   proverb: ['прыказка', 'прыказкі', 'прымаўка', 'прымаўкі', 'народная мудрасць'],
   weather_sign: ['прыкмета', 'прыкметы', 'надвор\'е', 'дождж', 'мароз', 'вецер', 'снег'],
+  phrase_equivalent: ['адпаведнік', 'адпаведнікі', 'фразэалёгія', 'фразеалогія', 'перакладчык прыказак', 'маскоўска беларускі'],
 };
 
 const SECTION_ALIASES: Record<string, string[]> = {
@@ -26,6 +27,7 @@ const SECTION_ALIASES: Record<string, string[]> = {
   threat: ['праклёны й грозьбы', 'пагрозы', 'грозьбы'],
   proverb: ['прыказкі й прымаўкі', 'прыказкі', 'прымаўкі'],
   weather_sign: ['прыкметы, жыццёвыя назіранні, парады', 'прыкметы', 'народны каляндар'],
+  phrase_equivalent: ['фразы і прыказкі', 'маскоўска-беларускі слоўнічак', 'фразэолёгічны'],
 };
 
 export class RecordSearchTool {
@@ -134,13 +136,19 @@ export class RecordSearchTool {
 
     for (const query of [...new Set(fallbackQueries)].slice(0, 8)) {
       const retrieved = await this.retriever.retrieve(query, Math.max(8, Math.ceil(limit / 2)), {
-        filter: { must: [{ key: 'sourceBook', match: { value: 'vushatski_slovazbor' } }] },
+        filter: { must: [{ key: 'sourceBook', match: { value: fallbackSourceBook(recordTypes) } }] },
       });
       results.push(...retrieved.map((source) => ({ ...source, score: source.score * 0.75 })));
     }
 
     return deduplicate(results).sort((left, right) => right.score - left.score).slice(0, limit);
   }
+}
+
+function fallbackSourceBook(recordTypes: string[]): string {
+  return recordTypes.includes('phrase_equivalent')
+    ? 'maskouska_kryvicki_phrasebook'
+    : 'vushatski_slovazbor';
 }
 
 function inferRecordTypes(plan: SearchPlan): string[] {

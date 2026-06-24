@@ -15,6 +15,7 @@ const TEXT_CACHE_ROOT = path.join(process.cwd(), '.rag-cache', 'pdf-text');
 const MANIFEST_VERSION = 1;
 const DEFAULT_EXTRACTOR_VERSION = 1;
 const COLUMN_EXTRACTOR_VERSION = 5;
+const OCR_EXTRACTOR_VERSION = 2;
 const CHUNK_SIZE = 1_400;
 const CHUNK_OVERLAP = 180;
 const EMBEDDING_BATCH_SIZE = 64;
@@ -30,7 +31,7 @@ interface PdfDocument {
   title: string;
   cacheKey: string;
   sha256: string;
-  extractionMode: 'layout' | 'columns';
+  extractionMode: 'layout' | 'columns' | 'ocr';
   extractorVersion: number;
 }
 
@@ -70,7 +71,7 @@ interface IndexedManifestEntry {
   qdrantCollection: string;
   embeddingModel: string;
   embeddingDimensions: number;
-  extractionMode?: 'layout' | 'raw' | 'columns';
+  extractionMode?: 'layout' | 'raw' | 'columns' | 'ocr';
   extractorVersion?: number;
   indexedAt: string;
 }
@@ -134,8 +135,16 @@ async function main(): Promise<void> {
     const documentChunks: TextChunk[] = [];
 
     const pagesToRead = maxPages && Number.isFinite(maxPages) ? Math.min(pageCount, maxPages) : pageCount;
+    const primaryReadMode = document.extractionMode === 'ocr' ? 'ocr' : 'text';
     for (let pageNumber = 1; pageNumber <= pagesToRead; pageNumber += 1) {
-      const text = normalizeExtractedText(await readCachedPageText(document, pageNumber, 'text'));
+      if (
+        primaryReadMode === 'ocr' &&
+        (pageNumber === 1 || pageNumber % 25 === 0 || pageNumber === pagesToRead)
+      ) {
+        console.log(`[index-pdf] OCR ${document.relativePath}: page ${pageNumber}/${pagesToRead}`);
+      }
+
+      const text = normalizeExtractedText(await readCachedPageText(document, pageNumber, primaryReadMode));
       if (!text) continue;
 
       documentChunks.push(
@@ -149,7 +158,7 @@ async function main(): Promise<void> {
       );
     }
 
-    if (documentChunks.length === 0 && ocrEnabled) {
+    if (documentChunks.length === 0 && ocrEnabled && primaryReadMode !== 'ocr') {
       console.log(`[index-pdf] OCR fallback for ${document.relativePath}.`);
       for (let pageNumber = 1; pageNumber <= pagesToRead; pageNumber += 1) {
         if (pageNumber === 1 || pageNumber % 25 === 0 || pageNumber === pagesToRead) {
@@ -283,7 +292,9 @@ async function documentMetadata(root: string, filePath: string): Promise<PdfDocu
   const normalizedFileName = normalizeForMatch(fileName);
   const sourceBook = sourceBookForDocument(folder, normalizedFileName);
   const dictionaryType =
-    folder === 'vocabulary'
+    isDialectSourceBook(sourceBook)
+      ? 'dialect'
+      : folder === 'vocabulary'
       ? 'orthographic'
       : folder === 'translate'
       ? 'translation'
@@ -305,9 +316,15 @@ async function documentMetadata(root: string, filePath: string): Promise<PdfDocu
     title: fileName.replace(/\.pdf$/i, ''),
     cacheKey: createHash('sha256').update(relativePath).digest('hex').slice(0, 16),
     sha256: await fileSha256(filePath),
-    extractionMode: dictionaryType === 'explanatory' ? 'columns' : 'layout',
+    extractionMode: extractionModeForDocument(sourceBook, dictionaryType),
     extractorVersion:
-      dictionaryType === 'explanatory' ? COLUMN_EXTRACTOR_VERSION : DEFAULT_EXTRACTOR_VERSION,
+      sourceBook === 'maskouska_kryvicki_phrasebook'
+        ? OCR_EXTRACTOR_VERSION
+        : isOcrOnlySourceBook(sourceBook)
+        ? OCR_EXTRACTOR_VERSION
+        : dictionaryType === 'explanatory'
+        ? COLUMN_EXTRACTOR_VERSION
+        : DEFAULT_EXTRACTOR_VERSION,
   };
 }
 
@@ -315,11 +332,65 @@ function sourceBookForDocument(folder: string, normalizedFileName: string): stri
   if (normalizedFileName.includes('vusacki') || normalizedFileName.includes('baradulin')) {
     return 'vushatski_slovazbor';
   }
+  if (
+    normalizedFileName.includes('maskouska') ||
+    normalizedFileName.includes('kryvicki') ||
+    normalizedFileName.includes('perakladchyk') ||
+    normalizedFileName.includes('маскоу') ||
+    normalizedFileName.includes('крывіц') ||
+    normalizedFileName.includes('перакладчык')
+  ) {
+    return 'maskouska_kryvicki_phrasebook';
+  }
+  if (normalizedFileName.includes('viciebski') || normalizedFileName.includes('krajovy')) {
+    return 'viciebski_krajovy_slounik';
+  }
+  if (
+    normalizedFileName.includes('havorak') ||
+    normalizedFileName.includes('paunoc') ||
+    normalizedFileName.includes('zachodniaj') ||
+    normalizedFileName.includes('pahranic')
+  ) {
+    if (normalizedFileName.includes('tom 1')) return 'pnz_havorki_tom_1';
+    if (normalizedFileName.includes('tom 2')) return 'pnz_havorki_tom_2';
+    if (normalizedFileName.includes('tom 3')) return 'pnz_havorki_tom_3';
+    return 'pnz_havorki';
+  }
   if (folder === 'proverbs') return 'proverbs_dictionary';
   if (folder === 'vocabulary') return 'orthographic_dictionary';
   if (folder === 'translate') return 'translation_dictionary';
   if (folder === 'tlumach') return 'explanatory_dictionary';
   return 'unknown';
+}
+
+function extractionModeForDocument(
+  sourceBook: string,
+  dictionaryType: string
+): PdfDocument['extractionMode'] {
+  if (isOcrOnlySourceBook(sourceBook)) return 'ocr';
+  if (dictionaryType === 'explanatory') return 'columns';
+  return 'layout';
+}
+
+function isOcrOnlySourceBook(sourceBook: string): boolean {
+  return (
+    sourceBook === 'maskouska_kryvicki_phrasebook' ||
+    sourceBook === 'viciebski_krajovy_slounik' ||
+    sourceBook === 'pnz_havorki_tom_1' ||
+    sourceBook === 'pnz_havorki_tom_2' ||
+    sourceBook === 'pnz_havorki_tom_3' ||
+    sourceBook === 'pnz_havorki'
+  );
+}
+
+function isDialectSourceBook(sourceBook: string): boolean {
+  return (
+    sourceBook === 'viciebski_krajovy_slounik' ||
+    sourceBook === 'pnz_havorki_tom_1' ||
+    sourceBook === 'pnz_havorki_tom_2' ||
+    sourceBook === 'pnz_havorki_tom_3' ||
+    sourceBook === 'pnz_havorki'
+  );
 }
 
 async function fileSha256(filePath: string): Promise<string> {
@@ -340,6 +411,7 @@ function isAlreadyIndexed(document: PdfDocument, entry?: IndexedManifestEntry): 
 
 function normalizeManifestExtractionMode(mode: IndexedManifestEntry['extractionMode']): PdfDocument['extractionMode'] {
   if (mode === 'columns') return 'columns';
+  if (mode === 'ocr') return 'ocr';
   return 'layout';
 }
 
@@ -558,7 +630,7 @@ async function readCachedPageText(
   const cachePrefix =
     mode === 'text'
       ? `text-${document.extractionMode}-v${document.extractorVersion}`
-      : `ocr-v${DEFAULT_EXTRACTOR_VERSION}`;
+      : `ocr-v${document.extractorVersion}`;
   const cachePath = path.join(TEXT_CACHE_ROOT, document.cacheKey, `${cachePrefix}-${pageNumber}.txt`);
   const cached = await readTextIfExists(cachePath);
   if (cached !== null) return cached;
@@ -605,14 +677,42 @@ async function readTextIfExists(filePath: string): Promise<string | null> {
 }
 
 async function ocrPage(filePath: string, pageNumber: number): Promise<string> {
+  const attempts = [
+    { resolution: '220', psm: '6' },
+    { resolution: '160', psm: '6' },
+    { resolution: '160', psm: '11' },
+  ];
+  let lastError: unknown;
+
+  for (const attempt of attempts) {
+    try {
+      return await ocrPageWithOptions(filePath, pageNumber, attempt.resolution, attempt.psm);
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `[index-pdf] OCR retry for ${path.basename(filePath)} page ${pageNumber} after failure at ${attempt.resolution}dpi/psm${attempt.psm}: ${error}`
+      );
+    }
+  }
+
+  console.warn(`[index-pdf] OCR skipped ${path.basename(filePath)} page ${pageNumber}: ${lastError}`);
+  return '';
+}
+
+async function ocrPageWithOptions(
+  filePath: string,
+  pageNumber: number,
+  resolution: string,
+  psm: string
+): Promise<string> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'telegram-bot-pdf-ocr-'));
   const prefix = path.join(tempDir, 'page');
 
   try {
     await execFileAsync(
       'pdftoppm',
-      ['-f', String(pageNumber), '-l', String(pageNumber), '-r', '220', '-png', filePath, prefix],
-      { maxBuffer: 16 * 1024 * 1024, timeout: 45_000 }
+      ['-f', String(pageNumber), '-l', String(pageNumber), '-r', resolution, '-png', filePath, prefix],
+      { maxBuffer: 16 * 1024 * 1024, timeout: 120_000 }
     );
     const images = (await readdir(tempDir))
       .filter((entry) => entry.endsWith('.png'))
@@ -621,8 +721,8 @@ async function ocrPage(filePath: string, pageNumber: number): Promise<string> {
 
     const { stdout } = await execFileAsync(
       'tesseract',
-      [path.join(tempDir, images[0]), 'stdout', '-l', 'bel+rus+pol+eng', '--psm', '6'],
-      { maxBuffer: 16 * 1024 * 1024, timeout: 45_000 }
+      [path.join(tempDir, images[0]), 'stdout', '-l', 'bel+rus+pol+eng', '--psm', psm],
+      { maxBuffer: 16 * 1024 * 1024, timeout: 120_000 }
     );
     return stdout;
   } finally {
@@ -790,6 +890,21 @@ function classifyRecord(text: string, chunk: TextChunk): string | undefined {
     }
   }
 
+  if (sourceBook === 'maskouska_kryvicki_phrasebook') {
+    if (!chunk.sectionTitle || normalizedSection.includes('дадатк')) return undefined;
+    if (/^[IVXІ]+\.?\s+/u.test(text.trim())) return undefined;
+    if (normalizedSection.includes('прывітан') || matchesAny(normalizedText, ['дабрыдзень', 'добры вечар'])) {
+      return 'greeting';
+    }
+    if (normalizedSection.includes('зычэнь') || matchesAny(normalizedText, ['дай бог', 'жадаю', 'зычу'])) {
+      return 'wish';
+    }
+    if (/[—-]/u.test(text) && /[а-яёіўў]/iu.test(text)) {
+      return 'phrase_equivalent';
+    }
+    return undefined;
+  }
+
   if (chunk.document.dictionaryType === 'proverbs' || /прыказк|прымаўк/iu.test(chunk.sectionTitle || '')) {
     return 'proverb';
   }
@@ -815,6 +930,7 @@ const RECORD_TYPE_TAGS: Record<string, string[]> = {
   threat: ['пагроза', 'пагрозы', 'грозьбы'],
   proverb: ['прыказка', 'прыказкі', 'прымаўка', 'прымаўкі'],
   weather_sign: ['прыкмета', 'прыкметы', 'надвор\'е', 'дождж', 'мароз', 'вецер'],
+  phrase_equivalent: ['адпаведнік', 'адпаведнікі', 'фразэалёгія', 'перакладчык прыказак'],
 };
 
 function deduplicateRecords(records: TextRecord[]): TextRecord[] {
@@ -828,6 +944,13 @@ function deduplicateRecords(records: TextRecord[]): TextRecord[] {
 }
 
 function sectionTitleForPage(document: PdfDocument, pageNumber: number): string | undefined {
+  if (document.sourceBook === 'maskouska_kryvicki_phrasebook') {
+    if (pageNumber >= 8 && pageNumber <= 20) return 'Фразы і прыказкі';
+    if (pageNumber >= 20 && pageNumber <= 24) return 'Прывітаньні і зычэньні';
+    if (pageNumber >= 25) return 'Дадаткі і пасьляслоўе';
+    return undefined;
+  }
+
   if (document.sourceBook !== 'vushatski_slovazbor') {
     if (document.dictionaryType === 'proverbs') return 'Прыказкі і прымаўкі';
     return undefined;
